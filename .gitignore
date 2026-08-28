@@ -1,0 +1,23 @@
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.zip
+*.log
+
+# Runtime state and user-trained/private knowledge
+data/
+knowledge/managed/
+knowledge/imports/
+knowledge/admin-facts.md
+
+# Local build and verification artifacts
+outputs/
+work/
+
+# Editor/OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,8 @@
+services:
+  craftopia-bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./knowledge:/app/knowledge
+      - ./data:/app/data
