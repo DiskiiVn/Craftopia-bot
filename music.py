@@ -11,6 +11,7 @@ import re
 import shutil
 import socket
 import subprocess
+import threading
 import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
@@ -31,9 +32,14 @@ logger = logging.getLogger("craftopia-music")
 ALLOWED_MENTIONS_NONE = discord.AllowedMentions.none()
 LoopMode = Literal["off", "track", "queue"]
 CRAFTOPIA_AUTHOR = "DiskiiVN"
+MUSIC_RECOVERY_BUILD = "2026.08.28-music-recovery-r1"
 PREPARED_STREAM_TTL_SECONDS = 90.0
-FFMPEG_EARLY_FAILURE_SECONDS = 10.0
 VOICE_DISCONNECT_TIMEOUT_SECONDS = 3.0
+FFMPEG_FRAME_SECONDS = 0.02
+FFMPEG_CLEANUP_TIMEOUT_SECONDS = 2.0
+PLAYBACK_SEEK_OVERLAP_SECONDS = 2.0
+PREMATURE_END_MIN_TOLERANCE_SECONDS = 12.0
+PREMATURE_END_MAX_TOLERANCE_SECONDS = 30.0
 YTDLP_AUDIO_FORMAT = (
     "bestaudio[protocol=https]/bestaudio[protocol=http]/"
     "bestaudio[protocol!*=m3u8]/bestaudio/best"
@@ -64,9 +70,14 @@ class MusicConfig:
     max_duration_seconds: int = 10_800
     allow_live: bool = False
     idle_seconds: int = 180
-    voice_disconnect_grace_seconds: int = 12
+    voice_disconnect_grace_seconds: int = 30
+    voice_reconnect_attempts: int = 4
+    voice_reconnect_backoff_seconds: int = 2
     resolve_timeout_seconds: int = 35
     resolve_workers: int = 2
+    playback_retries: int = 4
+    playback_retry_backoff_seconds: int = 2
+    stream_rw_timeout_seconds: int = 45
     bitrate_kbps: int = 128
     default_volume: int = 80
     ffmpeg_path: str = ""
@@ -94,10 +105,21 @@ class MusicConfig:
             allow_live=_env_bool("MUSIC_ALLOW_LIVE", False),
             idle_seconds=_env_int("MUSIC_IDLE_SECONDS", 180, 30, 1800),
             voice_disconnect_grace_seconds=_env_int(
-                "MUSIC_VOICE_DISCONNECT_GRACE_SECONDS", 12, 3, 60
+                "MUSIC_VOICE_DISCONNECT_GRACE_SECONDS", 30, 25, 180
+            ),
+            voice_reconnect_attempts=_env_int("MUSIC_VOICE_RECONNECT_ATTEMPTS", 4, 1, 10),
+            voice_reconnect_backoff_seconds=_env_int(
+                "MUSIC_VOICE_RECONNECT_BACKOFF_SECONDS", 2, 1, 15
             ),
             resolve_timeout_seconds=_env_int("MUSIC_RESOLVE_TIMEOUT_SECONDS", 35, 10, 120),
             resolve_workers=_env_int("MUSIC_RESOLVE_WORKERS", 2, 1, 4),
+            playback_retries=_env_int("MUSIC_PLAYBACK_RETRIES", 4, 1, 10),
+            playback_retry_backoff_seconds=_env_int(
+                "MUSIC_PLAYBACK_RETRY_BACKOFF_SECONDS", 2, 1, 15
+            ),
+            stream_rw_timeout_seconds=_env_int(
+                "MUSIC_STREAM_RW_TIMEOUT_SECONDS", 45, 15, 120
+            ),
             bitrate_kbps=_env_int("MUSIC_BITRATE_KBPS", 128, 64, 320),
             default_volume=_env_int("MUSIC_DEFAULT_VOLUME", 80, 10, 100),
             ffmpeg_path=os.getenv("FFMPEG_PATH", "").strip(),
@@ -107,6 +129,14 @@ class MusicConfig:
 
 class MusicError(RuntimeError):
     """An expected music error that is safe to show to Discord users."""
+
+
+class PlaybackInterrupted(MusicError):
+    """The source stopped before the expected end and can be resumed."""
+
+
+class VoiceUnavailable(MusicError):
+    """Discord voice is temporarily unavailable and can be reconnected."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -493,12 +523,99 @@ class ErrorAwarePCMVolumeTransformer(discord.PCMVolumeTransformer):
         return getattr(self.original, "_current_error", None)
 
 
+class ProgressAudioSource(discord.AudioSource):
+    """Count actual 20 ms Discord audio frames without counting pauses or stalls."""
+
+    def __init__(self, original: discord.AudioSource) -> None:
+        self.original = original
+        self.played_seconds = 0.0
+        self._cleanup_lock = threading.Lock()
+        self._cleaned = False
+
+    def read(self) -> bytes:
+        data = self.original.read()
+        if data:
+            self.played_seconds += FFMPEG_FRAME_SECONDS
+        return data
+
+    def is_opus(self) -> bool:
+        return self.original.is_opus()
+
+    def cleanup(self) -> None:
+        with self._cleanup_lock:
+            if self._cleaned:
+                return
+            self._cleaned = True
+        self.original.cleanup()
+
+    @property
+    def _current_error(self) -> Exception | None:
+        return getattr(self.original, "_current_error", None)
+
+
+class _BoundedFFmpegCleanupMixin:
+    """Reap FFmpeg with hard deadlines instead of an unbounded communicate()."""
+
+    def _kill_process(self) -> None:
+        try:
+            self._check_process_returncode()
+        except Exception:
+            pass
+        process = getattr(self, "_process", None)
+        if process is None or not callable(getattr(process, "poll", None)):
+            return
+        pid = getattr(process, "pid", "unknown")
+        try:
+            running = process.poll() is None
+        except Exception:
+            running = False
+        if running:
+            try:
+                process.terminate()
+                process.wait(timeout=0.5)
+            except subprocess.TimeoutExpired:
+                try:
+                    process.kill()
+                    process.wait(timeout=1.0)
+                except subprocess.TimeoutExpired:
+                    logger.error("FFmpeg process %s did not exit before cleanup deadline", pid)
+                except Exception:
+                    logger.warning("Could not force-kill FFmpeg process %s", pid)
+            except Exception:
+                try:
+                    process.kill()
+                    process.wait(timeout=1.0)
+                except Exception:
+                    logger.warning("Could not terminate FFmpeg process %s", pid)
+        for stream_name in ("stdin", "stdout", "stderr"):
+            stream = getattr(process, stream_name, None)
+            close = getattr(stream, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    pass
+        logger.info(
+            "FFmpeg process %s cleanup completed with return code %s",
+            pid,
+            getattr(process, "returncode", "unknown"),
+        )
+
+
+class BoundedFFmpegPCMAudio(_BoundedFFmpegCleanupMixin, discord.FFmpegPCMAudio):
+    pass
+
+
+class BoundedFFmpegOpusAudio(_BoundedFFmpegCleanupMixin, discord.FFmpegOpusAudio):
+    pass
+
+
 class AudioSourceFactory:
     BEFORE_OPTIONS = (
-        "-nostdin -rw_timeout 15000000 -reconnect 1 -reconnect_streamed 1 "
+        "-nostdin -rw_timeout 45000000 -reconnect 1 -reconnect_streamed 1 "
         "-reconnect_delay_max 5"
     )
-    SAFE_BEFORE_OPTIONS = "-nostdin -rw_timeout 15000000"
+    SAFE_BEFORE_OPTIONS = "-nostdin -rw_timeout 45000000"
 
     def __init__(self, config: MusicConfig) -> None:
         self.config = config
@@ -552,12 +669,28 @@ class AudioSourceFactory:
     def attempt_count(self) -> int:
         return max(1, min(2, len(self.executables)))
 
-    def create(self, stream_url: str, volume: int, *, attempt: int = 0) -> discord.AudioSource:
+    def _before_options(self, attempt: int, start_at: float) -> str:
+        timeout = self.config.stream_rw_timeout_seconds * 1_000_000
+        options = f"-nostdin -rw_timeout {timeout}"
+        if attempt <= 0:
+            options += " -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
+        if start_at > 0:
+            options += f" -ss {start_at:.3f}"
+        return options
+
+    def create(
+        self,
+        stream_url: str,
+        volume: int,
+        *,
+        attempt: int = 0,
+        start_at: float = 0.0,
+    ) -> discord.AudioSource:
         normalized_volume = max(10, min(100, volume)) / 100
-        executable = self.executables[min(max(0, attempt), len(self.executables) - 1)]
-        before_options = self.BEFORE_OPTIONS if attempt <= 0 else self.SAFE_BEFORE_OPTIONS
+        executable = self.executables[max(0, attempt) % len(self.executables)]
+        before_options = self._before_options(attempt, max(0.0, float(start_at)))
         if discord.opus.is_loaded():
-            pcm = discord.FFmpegPCMAudio(
+            pcm = BoundedFFmpegPCMAudio(
                 stream_url,
                 executable=executable,
                 before_options=before_options,
@@ -565,7 +698,7 @@ class AudioSourceFactory:
             )
             return ErrorAwarePCMVolumeTransformer(pcm, volume=normalized_volume)
         # Opus output works without a system libopus and is ideal for generic hosting.
-        return discord.FFmpegOpusAudio(
+        return BoundedFFmpegOpusAudio(
             stream_url,
             executable=executable,
             bitrate=self.config.bitrate_kbps,
@@ -683,6 +816,8 @@ class GuildPlayer:
     play_abort_event: asyncio.Event = field(default_factory=asyncio.Event)
     panel_dirty: bool = False
     prepared_streams: dict[int, tuple[StreamResource, float]] = field(default_factory=dict)
+    desired_voice_channel_id: int | None = None
+    resume_offset_seconds: float = 0.0
 
     @property
     def voice(self) -> discord.VoiceClient | None:
@@ -840,6 +975,7 @@ class GuildPlayer:
             self.current = track
             self.finish_action = "normal"
             self.last_error = None
+            self.resume_offset_seconds = 0.0
             self.play_generation += 1
             self.play_abort_event = asyncio.Event()
             generation = self.play_generation
@@ -855,7 +991,35 @@ class GuildPlayer:
                 if item is None:
                     continue
                 track, generation = item
-                await self._play_one(track, generation)
+                try:
+                    await self._play_one(track, generation)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    # A resolver, Discord, or third-party library must never take
+                    # the whole guild queue down with one bad track.
+                    logger.exception(
+                        "Unexpected music track failure guild=%s track=%s",
+                        self.guild.id,
+                        track.identifier,
+                    )
+                    async with self.lock:
+                        if generation == self.play_generation and not self.closed:
+                            self.current = None
+                            self.resume_offset_seconds = 0.0
+                            self.last_error = (
+                                "Bài vừa phát gặp lỗi bất ngờ; bot đã giữ hàng đợi và chuyển bài."
+                            )
+                            if self.queue:
+                                self.queue_event.set()
+                            else:
+                                self.queue_event.clear()
+                                self._schedule_idle_if_needed()
+                    self.manager.schedule_panel_update(self.guild.id)
+                    await self.manager.notify(
+                        self.guild.id,
+                        "⚠️ Một bài nhạc gặp lỗi bất ngờ; Craftopia đã giữ hàng đợi và chuyển bài.",
+                    )
         except asyncio.CancelledError:
             return
         except Exception:
@@ -900,6 +1064,50 @@ class GuildPlayer:
             current = getattr(current, "original", None)
         return None
 
+    async def _cleanup_source_bounded(
+        self,
+        source: discord.AudioSource,
+        reason: str,
+    ) -> None:
+        # Do not use asyncio.to_thread here: a pathological cleanup would leave a
+        # non-daemon executor worker alive and could keep container shutdown hung.
+        loop = asyncio.get_running_loop()
+        completed = asyncio.Event()
+        cleanup_error: list[BaseException] = []
+
+        def cleanup() -> None:
+            try:
+                source.cleanup()
+            except BaseException as exc:
+                cleanup_error.append(exc)
+            finally:
+                try:
+                    loop.call_soon_threadsafe(completed.set)
+                except RuntimeError:
+                    pass
+
+        threading.Thread(
+            target=cleanup,
+            name=f"craftopia-audio-cleanup-{self.guild.id}",
+            daemon=True,
+        ).start()
+        try:
+            await asyncio.wait_for(completed.wait(), timeout=FFMPEG_CLEANUP_TIMEOUT_SECONDS)
+        except TimeoutError:
+            logger.error(
+                "Audio source cleanup exceeded %.1fs guild=%s reason=%s",
+                FFMPEG_CLEANUP_TIMEOUT_SECONDS,
+                self.guild.id,
+                reason,
+            )
+        if cleanup_error:
+            logger.warning(
+                "Audio source cleanup failed guild=%s reason=%s error=%s",
+                self.guild.id,
+                reason,
+                type(cleanup_error[0]).__name__,
+            )
+
     async def _play_resource_once(
         self,
         resource: StreamResource,
@@ -907,20 +1115,24 @@ class GuildPlayer:
         playback_attempt: int,
         generation: int,
         abort_event: asyncio.Event,
+        *,
+        start_at: float = 0.0,
     ) -> tuple[Exception | None, float, bool]:
-        """Play one source and return (error, elapsed seconds, handed to Discord)."""
+        """Play one source and return (error, audio seconds, handed to Discord)."""
         voice = self.voice
         if voice is None or not voice.is_connected():
-            return MusicError("Bot đã mất kết nối voice."), 0.0, False
+            return VoiceUnavailable("Bot đã mất kết nối voice."), 0.0, False
 
-        source: discord.AudioSource | None = None
+        source: ProgressAudioSource | None = None
         handed_to_discord = False
-        started_at = time.monotonic()
         try:
-            source = self.manager.audio_factory.create(
-                resource.url,
-                self.volume,
-                attempt=playback_attempt,
+            source = ProgressAudioSource(
+                self.manager.audio_factory.create(
+                    resource.url,
+                    self.volume,
+                    attempt=playback_attempt,
+                    start_at=start_at,
+                )
             )
             loop = asyncio.get_running_loop()
             finished: asyncio.Future[Exception | None] = loop.create_future()
@@ -954,11 +1166,11 @@ class GuildPlayer:
                     or self.finish_action != "normal"
                     or abort_event.is_set()
                 ):
-                    return None, time.monotonic() - started_at, False
+                    return None, source.played_seconds, False
                 voice.play(source, after=after)
                 handed_to_discord = True
             self.manager.schedule_panel_update(self.guild.id)
-            expected = track.duration or self.manager.config.max_duration_seconds
+            expected = max(1.0, (track.duration or self.manager.config.max_duration_seconds) - start_at)
             playback_timeout = min(
                 self.manager.config.max_duration_seconds + 300,
                 max(300, expected + 300),
@@ -972,29 +1184,37 @@ class GuildPlayer:
                 # force cleanup here to kill FFmpeg and unblock the pipe. The
                 # discord.py cleanup that follows is idempotent after _process is
                 # cleared by FFmpegAudio.cleanup().
-                try:
-                    source.cleanup()
-                except Exception:
-                    logger.warning(
-                        "Forced audio source cleanup failed after playback timeout guild=%s",
-                        self.guild.id,
-                    )
+                await self._cleanup_source_bounded(source, "playback timeout")
                 error = exc
-            return error, time.monotonic() - started_at, handed_to_discord
+            if (
+                error is None
+                and self.finish_action == "normal"
+                and not abort_event.is_set()
+            ):
+                if not voice.is_connected():
+                    error = VoiceUnavailable("Discord Voice bị ngắt giữa bài.")
+                elif track.duration is not None and not track.is_live:
+                    remaining = max(0.0, float(track.duration) - start_at)
+                    tolerance = min(
+                        PREMATURE_END_MAX_TOLERANCE_SECONDS,
+                        max(PREMATURE_END_MIN_TOLERANCE_SECONDS, track.duration * 0.05),
+                    )
+                    if remaining > tolerance and source.played_seconds + tolerance < remaining:
+                        error = PlaybackInterrupted(
+                            "Nguồn âm thanh kết thúc sớm trước thời lượng dự kiến."
+                        )
+            return error, source.played_seconds, handed_to_discord
         except asyncio.CancelledError:
             if voice.is_playing() or voice.is_paused():
                 voice.stop()
             raise
         except Exception as exc:
-            return exc, time.monotonic() - started_at, handed_to_discord
+            return exc, source.played_seconds if source is not None else 0.0, handed_to_discord
         finally:
             # Once voice.play succeeds, discord.py's AudioPlayer owns and cleans
             # the source. Cleaning it here too races and logs the same PID twice.
             if source is not None and not handed_to_discord:
-                try:
-                    source.cleanup()
-                except Exception:
-                    pass
+                await self._cleanup_source_bounded(source, "unowned source")
 
     async def _refresh_stream_for_retry(
         self,
@@ -1030,6 +1250,23 @@ class GuildPlayer:
                 and not abort_event.is_set()
             )
 
+    async def _wait_retry_backoff(
+        self,
+        retry_number: int,
+        generation: int,
+        abort_event: asyncio.Event,
+    ) -> bool:
+        delay = min(
+            8,
+            self.manager.config.playback_retry_backoff_seconds
+            * (2 ** max(0, retry_number - 1)),
+        )
+        try:
+            await asyncio.wait_for(abort_event.wait(), timeout=delay)
+            return False
+        except TimeoutError:
+            return await self._retry_still_allowed(generation, abort_event)
+
     async def _play_one(self, track: MusicTrack, generation: int) -> None:
         self.manager.schedule_panel_update(self.guild.id)
         abort_event = self.play_abort_event
@@ -1062,6 +1299,24 @@ class GuildPlayer:
                         break
                     except TimeoutError:
                         pass
+            except Exception as exc:
+                error_text = "Không thể tải nguồn nhạc do lỗi mạng hoặc yt-dlp."
+                logger.warning(
+                    "Initial music stream resolution raised guild=%s track=%s error=%s "
+                    "attempt=%s/2",
+                    self.guild.id,
+                    track.identifier,
+                    type(exc).__name__,
+                    attempt + 1,
+                )
+                if attempt == 0:
+                    try:
+                        await asyncio.wait_for(abort_event.wait(), timeout=0.5)
+                        resource = None
+                        error_text = None
+                        break
+                    except TimeoutError:
+                        pass
             finally:
                 if not abort_task.done():
                     abort_task.cancel()
@@ -1077,51 +1332,53 @@ class GuildPlayer:
                 else:
                     self.current = resource.track
                     track = resource.track
+                    error_text = None
 
         playback_error: Exception | None = None
         if resource is not None:
-            voice = self.voice
-            if voice is None or not voice.is_connected():
-                error_text = "Bot đã mất kết nối voice."
-            else:
-                for playback_attempt in range(2):
-                    playback_error, elapsed, handed_to_discord = await self._play_resource_once(
-                        resource,
-                        track,
+            resume_from = max(0.0, self.resume_offset_seconds)
+            attempts = 1 + self.manager.config.playback_retries
+            for playback_attempt in range(attempts):
+                if playback_attempt > 0:
+                    if not await self._wait_retry_backoff(
                         playback_attempt,
                         generation,
                         abort_event,
-                    )
-                    if playback_error is None:
-                        break
-                    if not await self._retry_still_allowed(generation, abort_event):
+                    ):
                         playback_error = None
                         break
-                    retryable = (
-                        not handed_to_discord
-                        or isinstance(playback_error, discord.FFmpegProcessError)
-                    )
-                    if (
-                        playback_attempt != 0
-                        or not retryable
-                        or elapsed > FFMPEG_EARLY_FAILURE_SECONDS
-                    ):
-                        break
-                    logger.warning(
-                        "FFmpeg failed early; refreshing stream and retrying guild=%s track=%s "
-                        "error=%s executable=%s",
-                        self.guild.id,
-                        track.identifier,
-                        type(playback_error).__name__,
-                        self.manager.audio_factory.executables[
-                            min(playback_attempt, len(self.manager.audio_factory.executables) - 1)
-                        ],
-                    )
+                    voice = self.voice
+                    if voice is None or not voice.is_connected():
+                        recovered = await self.manager.recover_voice(self, abort_event)
+                        if not recovered:
+                            playback_error = VoiceUnavailable(
+                                "Discord Voice chưa kết nối lại được."
+                            )
+                            continue
                     try:
                         refreshed = await self._refresh_stream_for_retry(track, abort_event)
                     except MusicError as exc:
                         playback_error = exc
-                        break
+                        logger.warning(
+                            "Music stream refresh failed guild=%s track=%s error=%s attempt=%s/%s",
+                            self.guild.id,
+                            track.identifier,
+                            type(exc).__name__,
+                            playback_attempt,
+                            self.manager.config.playback_retries,
+                        )
+                        continue
+                    except Exception as exc:
+                        playback_error = MusicError("Không thể làm mới nguồn nhạc do lỗi mạng.")
+                        logger.warning(
+                            "Music stream refresh raised guild=%s track=%s error=%s attempt=%s/%s",
+                            self.guild.id,
+                            track.identifier,
+                            type(exc).__name__,
+                            playback_attempt,
+                            self.manager.config.playback_retries,
+                        )
+                        continue
                     if refreshed is None or not await self._retry_still_allowed(
                         generation, abort_event
                     ):
@@ -1133,14 +1390,68 @@ class GuildPlayer:
                             return
                         self.current = refreshed.track
                         track = refreshed.track
-                if playback_error is not None:
-                    logger.warning(
-                        "Playback failed guild=%s track=%s error=%s",
-                        self.guild.id,
-                        track.identifier,
-                        type(playback_error).__name__,
+
+                start_at = 0.0 if track.is_live else max(
+                    0.0,
+                    resume_from - (PLAYBACK_SEEK_OVERLAP_SECONDS if playback_attempt else 0.0),
+                )
+                playback_error, played_seconds, handed_to_discord = (
+                    await self._play_resource_once(
+                        resource,
+                        track,
+                        playback_attempt,
+                        generation,
+                        abort_event,
+                        start_at=start_at,
                     )
-                    error_text = "FFmpeg/Discord không thể phát bài này; bot đã chuyển bài."
+                )
+                resume_from = start_at + max(0.0, played_seconds)
+                if track.duration is not None:
+                    resume_from = min(resume_from, float(track.duration))
+                async with self.lock:
+                    if generation == self.play_generation and not self.closed:
+                        self.resume_offset_seconds = resume_from
+                if playback_error is None:
+                    break
+                if not await self._retry_still_allowed(generation, abort_event):
+                    playback_error = None
+                    break
+                retryable = bool(
+                    not handed_to_discord
+                    or isinstance(
+                        playback_error,
+                        (
+                            PlaybackInterrupted,
+                            VoiceUnavailable,
+                            discord.FFmpegProcessError,
+                            OSError,
+                            TimeoutError,
+                        ),
+                    )
+                )
+                if not retryable or playback_attempt + 1 >= attempts:
+                    break
+                logger.warning(
+                    "Playback interrupted; refreshing and resuming guild=%s track=%s "
+                    "error=%s retry=%s/%s resume=%.1fs executable=%s",
+                    self.guild.id,
+                    track.identifier,
+                    type(playback_error).__name__,
+                    playback_attempt + 1,
+                    self.manager.config.playback_retries,
+                    resume_from,
+                    self.manager.audio_factory.executables[
+                        playback_attempt % len(self.manager.audio_factory.executables)
+                    ],
+                )
+            if playback_error is not None:
+                logger.warning(
+                    "Playback failed after recovery attempts guild=%s track=%s error=%s",
+                    self.guild.id,
+                    track.identifier,
+                    type(playback_error).__name__,
+                )
+                error_text = "FFmpeg/Discord không thể phục hồi bài này; bot đã chuyển bài."
 
         await self._finish_track(generation, error_text)
         if error_text:
@@ -1157,6 +1468,7 @@ class GuildPlayer:
             action = self.finish_action
             self.current = None
             self.finish_action = "normal"
+            self.resume_offset_seconds = 0.0
             if error_text:
                 self.last_error = clean_metadata_text(error_text, 300)
             elif finished is not None and action == "normal":
@@ -1235,6 +1547,7 @@ class GuildPlayer:
                 raise MusicError("Không có bài nào để bỏ qua.")
             skipped_title = self.current.title
             self.finish_action = "skip"
+            self.resume_offset_seconds = 0.0
             self.play_abort_event.set()
             voice = self.voice
             if voice and (voice.is_playing() or voice.is_paused()):
@@ -1250,6 +1563,7 @@ class GuildPlayer:
             self.queue_event.clear()
             self.loop_mode = "off"
             self.finish_action = "stop"
+            self.resume_offset_seconds = 0.0
             self.play_abort_event.set()
             voice = self.voice
             if voice and (voice.is_playing() or voice.is_paused()):
@@ -1290,15 +1604,27 @@ class GuildPlayer:
         labels = {"off": "tắt", "track": "lặp bài hiện tại", "queue": "lặp toàn hàng đợi"}
         return f"🔁 Loop: **{labels[selected_mode]}**."
 
+    @staticmethod
+    def _pcm_transformer(source: object) -> discord.PCMVolumeTransformer | None:
+        current = source
+        visited: set[int] = set()
+        while current is not None and id(current) not in visited:
+            visited.add(id(current))
+            if isinstance(current, discord.PCMVolumeTransformer):
+                return current
+            current = getattr(current, "original", None)
+        return None
+
     async def set_volume(self, volume: int) -> str:
         volume = max(10, min(100, int(volume)))
         async with self.lock:
             self.volume = volume
             voice = self.voice
             source = getattr(voice, "source", None) if voice else None
-            immediate = isinstance(source, discord.PCMVolumeTransformer)
-            if immediate:
-                source.volume = volume / 100
+            transformer = self._pcm_transformer(source)
+            immediate = transformer is not None
+            if transformer is not None:
+                transformer.volume = volume / 100
         self.manager.schedule_panel_update(self.guild.id)
         suffix = "" if immediate else " (áp dụng từ bài kế tiếp trên hosting không có libopus)"
         return f"🔊 Âm lượng: **{volume}%**{suffix}."
@@ -1309,9 +1635,10 @@ class GuildPlayer:
             self.volume = volume
             voice = self.voice
             source = getattr(voice, "source", None) if voice else None
-            immediate = isinstance(source, discord.PCMVolumeTransformer)
-            if immediate:
-                source.volume = volume / 100
+            transformer = self._pcm_transformer(source)
+            immediate = transformer is not None
+            if transformer is not None:
+                transformer.volume = volume / 100
         self.manager.schedule_panel_update(self.guild.id)
         suffix = "" if immediate else " (áp dụng từ bài kế tiếp trên hosting không có libopus)"
         return f"🔊 Âm lượng: **{volume}%**{suffix}."
@@ -1326,6 +1653,7 @@ class GuildPlayer:
             self.queue.clear()
             self.prepared_streams.clear()
             self.current = None
+            self.resume_offset_seconds = 0.0
             self.queue_event.set()
             self._cancel_idle()
             self.cancel_empty_channel_timer()
@@ -1400,6 +1728,7 @@ class MusicManager:
         self._inflight_by_guild: dict[int, int] = {}
         self._last_request_at: dict[tuple[int, int], float] = {}
         self._voice_disconnect_tasks: dict[int, asyncio.Task] = {}
+        self._voice_recovery_events: dict[int, asyncio.Event] = {}
 
     def _guild_lock(self, guild_id: int) -> asyncio.Lock:
         lock = self._guild_locks.get(guild_id)
@@ -1449,41 +1778,168 @@ class MusicManager:
         return self.players.get(guild_id)
 
     def cancel_bot_disconnect_check(self, guild_id: int) -> None:
+        event = self._voice_recovery_events.pop(guild_id, None)
+        if event is not None:
+            event.set()
         task = self._voice_disconnect_tasks.pop(guild_id, None)
         if task and task is not asyncio.current_task() and not task.done():
             task.cancel()
 
-    def schedule_bot_disconnect_check(self, guild: discord.Guild) -> None:
-        """Debounce transient voice-state gaps while discord.py reconnects."""
+    def signal_bot_voice_recovered(self, guild_id: int) -> None:
+        event = self._voice_recovery_events.get(guild_id)
+        if event is not None:
+            event.set()
+
+    async def recover_voice(
+        self,
+        player: GuildPlayer,
+        abort_event: asyncio.Event | None = None,
+    ) -> bool:
+        guild = player.guild
+        for attempt in range(1, self.config.voice_reconnect_attempts + 1):
+            if (
+                self._closed
+                or player.closed
+                or self.players.get(guild.id) is not player
+                or (abort_event is not None and abort_event.is_set())
+            ):
+                return False
+            voice = guild.voice_client
+            if voice and voice.is_connected():
+                self.signal_bot_voice_recovered(guild.id)
+                return True
+            channel_id = player.desired_voice_channel_id or getattr(
+                getattr(voice, "channel", None), "id", None
+            )
+            get_channel = getattr(guild, "get_channel", None)
+            channel = get_channel(channel_id) if callable(get_channel) and channel_id else None
+            if channel is None and getattr(getattr(voice, "channel", None), "id", None) == channel_id:
+                channel = voice.channel
+            if channel is None or not callable(getattr(channel, "connect", None)):
+                logger.warning(
+                    "Cannot recover Discord voice because channel %s is unavailable guild=%s",
+                    channel_id,
+                    guild.id,
+                )
+                return False
+            try:
+                await self.ensure_voice(guild, channel)
+            except MusicError as exc:
+                logger.warning(
+                    "Discord voice reconnect failed guild=%s attempt=%s/%s error=%s",
+                    guild.id,
+                    attempt,
+                    self.config.voice_reconnect_attempts,
+                    type(exc).__name__,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Discord voice reconnect raised guild=%s attempt=%s/%s error=%s",
+                    guild.id,
+                    attempt,
+                    self.config.voice_reconnect_attempts,
+                    type(exc).__name__,
+                )
+            else:
+                voice = guild.voice_client
+                if voice and voice.is_connected():
+                    player.desired_voice_channel_id = channel_id
+                    self.signal_bot_voice_recovered(guild.id)
+                    logger.info(
+                        "Discord voice reconnected guild=%s channel=%s attempt=%s",
+                        guild.id,
+                        channel_id,
+                        attempt,
+                    )
+                    return True
+            if attempt >= self.config.voice_reconnect_attempts:
+                break
+            delay = min(
+                15,
+                self.config.voice_reconnect_backoff_seconds * (2 ** (attempt - 1)),
+            )
+            if abort_event is None:
+                await asyncio.sleep(delay)
+            else:
+                try:
+                    await asyncio.wait_for(abort_event.wait(), timeout=delay)
+                    return False
+                except TimeoutError:
+                    pass
+        return False
+
+    def schedule_bot_disconnect_check(
+        self,
+        guild: discord.Guild,
+        channel_id: int | None = None,
+    ) -> None:
+        """Preserve the session while Discord reconnects, then actively rejoin."""
         player = self.players.get(guild.id)
         if self._closed or player is None or player.closed:
             return
+        if channel_id is None:
+            channel_id = getattr(getattr(guild.voice_client, "channel", None), "id", None)
+        if channel_id is not None:
+            player.desired_voice_channel_id = channel_id
         self.cancel_bot_disconnect_check(guild.id)
+        recovered_event = asyncio.Event()
+        self._voice_recovery_events[guild.id] = recovered_event
 
         async def delayed_check() -> None:
+            warned = False
             try:
-                await asyncio.sleep(self.config.voice_disconnect_grace_seconds)
-                if self._closed or self.players.get(guild.id) is not player or player.closed:
+                try:
+                    await asyncio.wait_for(
+                        recovered_event.wait(),
+                        timeout=self.config.voice_disconnect_grace_seconds,
+                    )
                     return
-                voice = guild.voice_client
-                if voice and voice.is_connected():
-                    logger.info("Discord voice connection recovered for guild %s", guild.id)
-                    return
-                logger.warning(
-                    "Discord voice connection did not recover after %ss for guild %s",
-                    self.config.voice_disconnect_grace_seconds,
-                    guild.id,
-                )
-                await self.handle_bot_disconnect(
-                    guild.id,
-                    expected_player=player,
-                    confirm_disconnected=True,
-                )
+                except TimeoutError:
+                    pass
+                while not self._closed and self.players.get(guild.id) is player and not player.closed:
+                    voice = guild.voice_client
+                    if voice and voice.is_connected():
+                        logger.info("Discord voice connection recovered for guild %s", guild.id)
+                        return
+                    logger.warning(
+                        "Discord voice did not self-recover after %ss; reconnecting guild=%s",
+                        self.config.voice_disconnect_grace_seconds,
+                        guild.id,
+                    )
+                    if await self.recover_voice(player):
+                        return
+                    if self.config.auto_leave:
+                        await self.handle_bot_disconnect(
+                            guild.id,
+                            expected_player=player,
+                            confirm_disconnected=True,
+                        )
+                        return
+                    if not warned:
+                        warned = True
+                        player.last_error = (
+                            "Voice đang mất kết nối; bot giữ nguyên phiên và sẽ tiếp tục thử lại."
+                        )
+                        self.schedule_panel_update(guild.id)
+                        await self.notify(
+                            guild.id,
+                            "⚠️ Discord Voice đang gián đoạn; Craftopia giữ nguyên phiên nhạc và tự nối lại.",
+                        )
+                    try:
+                        await asyncio.wait_for(
+                            recovered_event.wait(),
+                            timeout=max(30, self.config.voice_disconnect_grace_seconds),
+                        )
+                        return
+                    except TimeoutError:
+                        pass
             except asyncio.CancelledError:
                 return
             finally:
                 if self._voice_disconnect_tasks.get(guild.id) is asyncio.current_task():
                     self._voice_disconnect_tasks.pop(guild.id, None)
+                if self._voice_recovery_events.get(guild.id) is recovered_event:
+                    self._voice_recovery_events.pop(guild.id, None)
 
         task = asyncio.create_task(
             delayed_check(),
@@ -1562,7 +2018,10 @@ class MusicManager:
         if dangling is None or dangling is previous_voice:
             return
         try:
-            await dangling.disconnect(force=True)
+            await asyncio.wait_for(
+                dangling.disconnect(force=True),
+                timeout=VOICE_DISCONNECT_TIMEOUT_SECONDS,
+            )
         except Exception:
             logger.warning("Could not clean up failed voice handshake for guild %s", guild.id)
         finally:
@@ -1590,10 +2049,14 @@ class MusicManager:
             if voice and voice.is_connected():
                 if getattr(voice.channel, "id", None) != channel.id:
                     raise MusicError("Bot đang phục vụ một kênh voice khác trong server.")
+                player.desired_voice_channel_id = channel.id
                 return voice
             if voice:
                 try:
-                    await voice.disconnect(force=True)
+                    await asyncio.wait_for(
+                        voice.disconnect(force=True),
+                        timeout=VOICE_DISCONNECT_TIMEOUT_SECONDS,
+                    )
                 except Exception:
                     logger.warning("Could not disconnect stale voice client for guild %s", guild.id)
                 finally:
@@ -1626,6 +2089,7 @@ class MusicManager:
                 await self._cleanup_failed_voice_connect(guild, previous_voice)
                 raise
             player._cancel_idle()
+            player.desired_voice_channel_id = channel.id
             return connected
 
     async def _connect_for_request(
@@ -1962,6 +2426,10 @@ class MusicManager:
         logger.info("Music manager shutdown started guilds=%s", len(self.players))
         recovery_tasks = tuple(self._voice_disconnect_tasks.values())
         self._voice_disconnect_tasks.clear()
+        recovery_events = tuple(self._voice_recovery_events.values())
+        self._voice_recovery_events.clear()
+        for event in recovery_events:
+            event.set()
         for task in recovery_tasks:
             if not task.done():
                 task.cancel()
@@ -2464,6 +2932,7 @@ class MusicCog(commands.Cog, name="Craftopia Music"):
             mode = "PCM + volume tức thời" if discord.opus.is_loaded() else "Opus FFmpeg + volume từ bài kế"
             text = (
                 "🎛️ **Craftopia Music Diagnose**\n"
+                f"Build: `{MUSIC_RECOVERY_BUILD}`\n"
                 f"discord.py: `{versions['discord.py']}` · aiohttp: `{versions['aiohttp']}` · "
                 f"DAVE: `{versions['davey']}` · "
                 f"PyNaCl: `{versions['PyNaCl']}`\n"
@@ -2473,7 +2942,9 @@ class MusicCog(commands.Cog, name="Craftopia Music"):
                 f"fallback: **{max(0, len(self.manager.audio_factory.executables) - 1)}**\n"
                 f"Audio mode: **{mode}**\n"
                 f"Stay mode: **{'24/7 (không tự rời)' if not self.manager.config.auto_leave else f'tự rời sau {self.manager.config.idle_seconds}s'}** · "
-                f"voice grace: **{self.manager.config.voice_disconnect_grace_seconds}s**\n"
+                f"voice grace: **{self.manager.config.voice_disconnect_grace_seconds}s** · "
+                f"reconnect: **{self.manager.config.voice_reconnect_attempts}** · "
+                f"playback retries: **{self.manager.config.playback_retries}**\n"
                 f"Voice permissions: **{discord.utils.escape_markdown(voice_line)}**\n"
                 f"Voice States Intent: **{self.bot.intents.voice_states}**"
             )
@@ -2490,9 +2961,15 @@ class MusicCog(commands.Cog, name="Craftopia Music"):
     ) -> None:
         if self.bot.user and member.id == self.bot.user.id:
             if before.channel and not after.channel:
-                self.manager.schedule_bot_disconnect_check(member.guild)
+                self.manager.schedule_bot_disconnect_check(
+                    member.guild,
+                    getattr(before.channel, "id", None),
+                )
             elif after.channel:
-                self.manager.cancel_bot_disconnect_check(member.guild.id)
+                player = self.manager.state_for(member.guild.id)
+                if player is not None:
+                    player.desired_voice_channel_id = getattr(after.channel, "id", None)
+                self.manager.signal_bot_voice_recovered(member.guild.id)
                 self.manager.reconcile_listeners(member.guild)
             return
         player = self.manager.state_for(member.guild.id)

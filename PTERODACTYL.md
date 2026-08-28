@@ -36,6 +36,8 @@ USER_UPLOAD=1
 AUTO_UPDATE=0
 ```
 
+`AUTO_UPDATE=0` nghĩa là source trên Panel **không tự đổi** khi bạn upload commit mới lên GitHub. Muốn Panel tự lấy bản mới, `/home/container` phải là Git repository đã clone đúng remote/branch và startup phải chạy `git pull` với `AUTO_UPDATE=1`. Nếu bạn đã upload ZIP hoặc thư mục hiện tại không có `.git`, hãy giữ `AUTO_UPDATE=0`, dừng server, upload/ghi đè bản mới vào `/home/container`, kiểm tra `music.py`, rồi khởi động lại. Chỉ upload lên GitHub không phải là một lần deploy lên Pterodactyl.
+
 Giữ startup command mặc định của egg để Panel tự cài `requirements.txt`. Nếu hosting cho nhập startup command thủ công, có thể dùng:
 
 ```bash
@@ -87,7 +89,12 @@ MUSIC_MAX_PLAYLIST=20
 MUSIC_MAX_DURATION_SECONDS=10800
 MUSIC_ALLOW_LIVE=false
 MUSIC_IDLE_SECONDS=180
-MUSIC_VOICE_DISCONNECT_GRACE_SECONDS=12
+MUSIC_VOICE_DISCONNECT_GRACE_SECONDS=30
+MUSIC_VOICE_RECONNECT_ATTEMPTS=4
+MUSIC_VOICE_RECONNECT_BACKOFF_SECONDS=2
+MUSIC_PLAYBACK_RETRIES=4
+MUSIC_PLAYBACK_RETRY_BACKOFF_SECONDS=2
+MUSIC_STREAM_RW_TIMEOUT_SECONDS=45
 MUSIC_RESOLVE_TIMEOUT_SECONDS=35
 MUSIC_RESOLVE_WORKERS=2
 MUSIC_BITRATE_KBPS=128
@@ -164,7 +171,9 @@ Panel nhạc mang author **DiskiiVN**; trạng thái bot trên Discord hiển th
 
 Để trống `FFMPEG_PATH` là cấu hình khuyến nghị: bot tự chọn theo thứ tự FFmpeg hệ thống trong `PATH`, rồi binary dự phòng của `imageio-ffmpeg`. Chỉ điền đường dẫn tuyệt đối khi cần ép một executable cụ thể. Sau khi restart, vào Voice Channel rồi chạy `/music_diagnose`; kết quả hiển thị dependency, phiên bản, chính xác đường dẫn executable đang dùng, số binary dự phòng và quyền View/Connect/Speak.
 
-Bot chỉ hỗ trợ Voice Channel, chưa hỗ trợ Stage Channel. Người gọi `/play` hoặc `/music` phải ở voice; người phát hoặc điều khiển phải ở cùng voice với bot. Chỉ `/queue` và `/nowplaying` là các lệnh xem có thể dùng ngoài voice. `/play tên bài` tìm trên YouTube; `/play URL` mặc định chỉ nhận YouTube và SoundCloud theo `MUSIC_ALLOWED_HOSTS`. Không cần YouTube API key. Mặc định `MUSIC_AUTO_LEAVE=false` giữ bot trong voice 24/7. Chỉ khi đổi thành `true`, bot mới tự rời sau `MUSIC_IDLE_SECONDS` giây khi không phát gì hoặc voice không còn người nghe. Khi voice Discord chập chờn, bot chờ `MUSIC_VOICE_DISCONNECT_GRACE_SECONDS` giây để discord.py tự nối lại trước khi đóng phiên nhạc.
+Bot chỉ hỗ trợ Voice Channel, chưa hỗ trợ Stage Channel. Người gọi `/play` hoặc `/music` phải ở voice; người phát hoặc điều khiển phải ở cùng voice với bot. Chỉ `/queue` và `/nowplaying` là các lệnh xem có thể dùng ngoài voice. `/play tên bài` tìm trên YouTube; `/play URL` mặc định chỉ nhận YouTube và SoundCloud theo `MUSIC_ALLOWED_HOSTS`. Không cần YouTube API key. Mặc định `MUSIC_AUTO_LEAVE=false` giữ bot trong voice 24/7. Chỉ khi đổi thành `true`, bot mới tự rời sau `MUSIC_IDLE_SECONDS` giây khi không phát gì hoặc voice không còn người nghe.
+
+Khi Discord Voice chập chờn, bot dành `MUSIC_VOICE_DISCONNECT_GRACE_SECONDS=30` giây cho kết nối nội bộ tự phục hồi. Nếu vẫn rớt, bot thử kết nối lại tối đa `MUSIC_VOICE_RECONNECT_ATTEMPTS=4` lần với backoff cơ sở `MUSIC_VOICE_RECONNECT_BACKOFF_SECONDS=2` giây và giữ bài hiện tại/hàng đợi trong lúc phục hồi. Khi stream hoặc FFmpeg ngắt giữa bài, bot refresh URL rồi thử phát tiếp tối đa `MUSIC_PLAYBACK_RETRIES=4` lần; thời gian chờ cơ sở giữa các lượt là `MUSIC_PLAYBACK_RETRY_BACKOFF_SECONDS=2` giây. `MUSIC_STREAM_RW_TIMEOUT_SECONDS=45` đặt timeout đọc mạng cho FFmpeg, đủ dài để chịu một khoảng nghẽn ngắn nhưng vẫn phát hiện stream đã treo.
 
 Khi nhận tên bài hoặc link một bài, bot chạy bắt tay Discord Voice và lượt tìm `yt-dlp` song song, sau đó tái sử dụng URL stream của lượt tìm đầu tiên nên luồng bình thường không phải resolve lần hai ngay trước khi phát. Playlist vẫn được đọc dạng phẳng/lazy và xử lý từng mục khi cần để giữ thời gian chờ và tài nguyên ở mức an toàn. Tốc độ lên nhạc thực tế vẫn phụ thuộc vào mạng outbound của hosting, nguồn nhạc và Discord Voice; không có biến `.env` riêng cho cơ chế này.
 
@@ -265,9 +274,9 @@ Bot còn đọc toàn bộ nội dung của tin nhắn do chính người chạy
 - `/music_diagnose` báo thiếu package: giữ `REQUIREMENTS_FILE=requirements.txt` rồi reinstall; các dependency cần có là `discord.py[voice]`, `yt-dlp` và `imageio-ffmpeg`.
 - FFmpeg thiếu/không chạy: xoá giá trị sai trong `FFMPEG_PATH` để bot tự tìm FFmpeg hệ thống và binary dự phòng, hoặc điền đúng đường dẫn executable do hosting cung cấp.
 - Console báo `Unrecognized option reconnect...`: bảo đảm đang dùng `music.py` mới; bản hiện tại chỉ dùng nhóm reconnect nền tương thích với cả FFmpeg cũ.
-- Console báo FFmpeg `return code -11`: đó là native crash. Bản hiện tại tránh binary Linux lỗi bằng cách ưu tiên FFmpeg hệ thống, ưu tiên nguồn HTTPS trực tiếp và tự refresh/retry đúng một lần bằng candidate dự phòng. Chạy `/music_diagnose` để xem executable thật đang được chọn.
+- Console báo FFmpeg `return code -11`: đó là native crash. Bản hiện tại tránh binary Linux lỗi bằng cách ưu tiên FFmpeg hệ thống, ưu tiên nguồn HTTPS trực tiếp và tự refresh/retry theo `MUSIC_PLAYBACK_RETRIES` bằng candidate dự phòng. Chạy `/music_diagnose` để xem executable thật đang được chọn.
 - Console báo FFmpeg `return code -9` ngay sau `voice handshake is being terminated`: FFmpeg đang bị cleanup do voice/bot/container dừng; đây không phải FFmpeg tự crash.
-- Pterodactyl báo `Exit code: 137`: toàn container đã nhận `SIGKILL`; riêng mã này không cho biết user, watchdog, Docker daemon hay kernel/node nào đã gửi tín hiệu. `Out of memory: false` chỉ nghĩa là Wings/Docker không đánh dấu **container OOM**, chưa loại trừ memory pressure/OOM ở toàn node. Kiểm tra **Activity/Audit log**, resource graph, Scheduled Tasks và nhờ hosting đối chiếu Wings/Docker/kernel log đúng thời điểm. Bản bot giới hạn voice cleanup còn 3 giây để tránh mắc kẹt trong shutdown, nhưng không chương trình nào có thể bắt hoặc từ chối `SIGKILL` từ host.
+- Pterodactyl báo `Exit code: 137`: toàn container đã nhận `SIGKILL` từ host; Python không thể bắt, từ chối hoặc chạy logic reconnect sau tín hiệu này. Riêng mã 137 không cho biết user, watchdog, Docker daemon hay kernel/node nào đã gửi tín hiệu. `Out of memory: false` chỉ nghĩa là Wings/Docker không đánh dấu **container OOM**, chưa loại trừ memory pressure/OOM ở toàn node. Kiểm tra **Activity/Audit log**, resource graph, Scheduled Tasks và nhờ hosting đối chiếu Wings/Docker/kernel log đúng thời điểm. Cơ chế retry nhạc chỉ có tác dụng khi tiến trình bot vẫn còn chạy.
 - Bot chỉ rời voice nhưng process vẫn online: giữ `MUSIC_AUTO_LEAVE=false`. Nếu muốn hành vi tự dọn kênh, đặt `true` và chỉnh `MUSIC_IDLE_SECONDS`.
 - Bot không vào voice: kiểm tra người gọi đã ở Voice Channel, bot có View/Connect/Speak, bot chưa phục vụ voice khác và hosting cho outbound UDP Discord Voice.
 - Bot vào voice nhưng không có tiếng: chạy `/music_diagnose`; thiếu system libopus vẫn có fallback Opus FFmpeg, nhưng hosting phải cho phép FFmpeg chạy và truy cập nguồn qua TCP 443.

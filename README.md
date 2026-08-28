@@ -78,7 +78,12 @@ MUSIC_MAX_PLAYLIST=20
 MUSIC_MAX_DURATION_SECONDS=10800
 MUSIC_ALLOW_LIVE=false
 MUSIC_IDLE_SECONDS=180
-MUSIC_VOICE_DISCONNECT_GRACE_SECONDS=12
+MUSIC_VOICE_DISCONNECT_GRACE_SECONDS=30
+MUSIC_VOICE_RECONNECT_ATTEMPTS=4
+MUSIC_VOICE_RECONNECT_BACKOFF_SECONDS=2
+MUSIC_PLAYBACK_RETRIES=4
+MUSIC_PLAYBACK_RETRY_BACKOFF_SECONDS=2
+MUSIC_STREAM_RW_TIMEOUT_SECONDS=45
 MUSIC_RESOLVE_TIMEOUT_SECONDS=35
 MUSIC_RESOLVE_WORKERS=2
 MUSIC_BITRATE_KBPS=128
@@ -117,6 +122,8 @@ docker compose up -d --build
 Dockerfile đã cài `ffmpeg` và `libopus0` để dùng binary của Debian, PCM và đổi âm lượng ngay trong bài. Nếu máy/hosting không có system libopus, bot tự dùng Opus do FFmpeg mã hoá; nhạc vẫn phát nhưng thay đổi âm lượng có thể chỉ áp dụng từ bài kế tiếp. Thứ tự chọn executable là `FFMPEG_PATH` hợp lệ, FFmpeg trong `PATH`, rồi mới đến binary dự phòng của `imageio-ffmpeg`. Để trống `FFMPEG_PATH` là cấu hình khuyến nghị.
 
 Để chạy 24/7 trên hosting, dùng gói Pterodactyl và làm theo [PTERODACTYL.md](PTERODACTYL.md).
+
+Đưa source mới lên GitHub **không tự cập nhật** các file đang chạy trên Pterodactyl. Panel chỉ lấy bản mới khi thư mục `/home/container` là Git repository và startup thực sự chạy `git pull` với `AUTO_UPDATE=1`; nếu đang dùng `AUTO_UPDATE=0`, upload ZIP hoặc thư mục không có `.git`, hãy dừng server, thay các file bằng bản mới rồi khởi động lại. Kiểm tra timestamp/nội dung `music.py` trên Panel để chắc chắn hosting không còn chạy bản cũ.
 
 ## 4. Dạy bot thông tin Craftopia
 
@@ -193,9 +200,11 @@ Nhập tên bài sẽ tìm một kết quả YouTube. URL chỉ được nhận 
 
 Mọi yêu cầu tìm nhạc từ `/play`, `~play` hoặc form **Thêm bài** đều qua cùng lớp chống spam: mỗi người chỉ có một yêu cầu đang xử lý trong mỗi server, hai yêu cầu của cùng người cách nhau ít nhất 3 giây và số lượt tìm đồng thời của server được giới hạn ở `max(4, MUSIC_RESOLVE_WORKERS × 2)`. Riêng `/play`/`~play` còn có cooldown tối đa 2 lần trong 10 giây cho mỗi thành viên. Hãy chờ yêu cầu hiện tại hoàn tất thay vì gửi lặp lại.
 
-Các giới hạn mặc định gồm 100 bài trong queue, 20 bài giữ chỗ cho mỗi người, tối đa 20 mục mỗi playlist, thời lượng 10.800 giây/bài, không nhận livestream, timeout resolve 35 giây, 2 worker, bitrate 128 kbps và âm lượng 80%. `MUSIC_AUTO_LEAVE=false` giữ bot trong voice 24/7; đổi thành `true` mới bật tự rời sau `MUSIC_IDLE_SECONDS` giây không hoạt động/không còn người nghe. `MUSIC_VOICE_DISCONNECT_GRACE_SECONDS=12` giữ phiên nhạc qua khoảng ngắt voice ngắn để discord.py có thời gian tự nối lại. Các biến còn lại tương ứng với `MUSIC_MAX_QUEUE`, `MUSIC_MAX_PER_USER`, `MUSIC_MAX_PLAYLIST`, `MUSIC_MAX_DURATION_SECONDS`, `MUSIC_ALLOW_LIVE`, `MUSIC_RESOLVE_TIMEOUT_SECONDS`, `MUSIC_RESOLVE_WORKERS`, `MUSIC_BITRATE_KBPS` và `MUSIC_DEFAULT_VOLUME`. Đổi `.env` cần restart bot.
+Các giới hạn mặc định gồm 100 bài trong queue, 20 bài giữ chỗ cho mỗi người, tối đa 20 mục mỗi playlist, thời lượng 10.800 giây/bài, không nhận livestream, timeout resolve 35 giây, 2 worker, bitrate 128 kbps và âm lượng 80%. `MUSIC_AUTO_LEAVE=false` giữ bot trong voice 24/7; đổi thành `true` mới bật tự rời sau `MUSIC_IDLE_SECONDS` giây không hoạt động/không còn người nghe. Khi voice Discord rớt, bot chờ `MUSIC_VOICE_DISCONNECT_GRACE_SECONDS=30`, sau đó thử nối lại tối đa `MUSIC_VOICE_RECONNECT_ATTEMPTS=4` lần, cách nhau theo backoff cơ sở `MUSIC_VOICE_RECONNECT_BACKOFF_SECONDS=2`. Khi FFmpeg hoặc URL stream rớt giữa bài, bot refresh nguồn và thử phát tiếp tối đa `MUSIC_PLAYBACK_RETRIES=4` lần với backoff cơ sở `MUSIC_PLAYBACK_RETRY_BACKOFF_SECONDS=2`; `MUSIC_STREAM_RW_TIMEOUT_SECONDS=45` là timeout đọc mạng của FFmpeg. Các biến còn lại tương ứng với `MUSIC_MAX_QUEUE`, `MUSIC_MAX_PER_USER`, `MUSIC_MAX_PLAYLIST`, `MUSIC_MAX_DURATION_SECONDS`, `MUSIC_ALLOW_LIVE`, `MUSIC_RESOLVE_TIMEOUT_SECONDS`, `MUSIC_RESOLVE_WORKERS`, `MUSIC_BITRATE_KBPS` và `MUSIC_DEFAULT_VOLUME`. Đổi `.env` cần restart bot.
 
 Queue, bài đang phát và panel hiện tại chỉ nằm trong RAM; restart bot sẽ kết thúc phiên nhạc. Chạy `/music_diagnose` sau khi triển khai để kiểm tra trước khi mở tính năng cho thành viên. Có thể tắt toàn bộ command nhạc bằng `MUSIC_ENABLED=false` rồi restart.
+
+Nếu Pterodactyl báo `Exit code: 137`, toàn bộ tiến trình đã nhận `SIGKILL` từ host/container. Python không thể bắt hoặc tự phục hồi bên trong tiến trình từ tín hiệu này; hãy kiểm tra resource graph, Activity/Audit log, Scheduled Tasks và log Wings/Docker/kernel của nhà cung cấp. Cơ chế retry nhạc chỉ xử lý lỗi stream, FFmpeg hoặc Discord Voice khi tiến trình bot vẫn còn chạy.
 
 ## 7. Xoá tin nhắn hôm nay có xác nhận
 

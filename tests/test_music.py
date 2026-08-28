@@ -341,6 +341,7 @@ class StubManager:
         self.schedule_panel_update = Mock()
         self.notify = AsyncMock()
         self.leave = AsyncMock()
+        self.recover_voice = AsyncMock(return_value=False)
         self.resolver = SimpleNamespace(
             stream_for=AsyncMock(return_value=resource),
         )
@@ -353,9 +354,15 @@ class StubManager:
 class FakeAudioSource:
     def __init__(self):
         self.cleanup_calls = 0
+        self._cleaned = False
 
     def cleanup(self):
-        self.cleanup_calls += 1
+        # Discord AudioSource.__del__ may call cleanup after the player's explicit
+        # bounded cleanup. Real FFmpeg cleanup is idempotent, so the fake records
+        # one effective cleanup rather than destructor timing.
+        if not self._cleaned:
+            self._cleaned = True
+            self.cleanup_calls += 1
 
 
 class FakeVoiceClient:
@@ -389,7 +396,12 @@ class FakeVoiceClient:
         self._playing = True
         self._paused = False
 
-    def finish(self, error=None):
+    def finish(self, error=None, *, played_seconds: float | None = 180.0):
+        # GuildPlayer now measures actual audio frames through ProgressAudioSource.
+        # Tests advance that counter explicitly so a normal finish is not mistaken
+        # for a premature EOF, while interruption tests can supply a partial value.
+        if played_seconds is not None and hasattr(self.source, "played_seconds"):
+            self.source.played_seconds = max(0.0, float(played_seconds))
         callback = self.after
         self.after = None
         self._playing = False
@@ -426,7 +438,13 @@ def make_player(
     voice: FakeVoiceClient | None = None,
     resource: StreamResource | None = None,
 ):
-    config = config or MusicConfig(queue_limit=10, per_user_limit=5, idle_seconds=180)
+    config = config or MusicConfig(
+        queue_limit=10,
+        per_user_limit=5,
+        idle_seconds=180,
+        playback_retries=1,
+        playback_retry_backoff_seconds=0,
+    )
     manager = StubManager(config, resource=resource)
     guild = SimpleNamespace(id=1, voice_client=voice)
     player = GuildPlayer(manager=manager, guild=guild, volume=config.default_volume)
@@ -660,6 +678,7 @@ class PlaybackCallbackTests(unittest.IsolatedAsyncioTestCase):
             prepared.url,
             player.volume,
             attempt=0,
+            start_at=0.0,
         )
         self.assertNotIn(id(track), player.prepared_streams)
         idle_task = player.idle_task
@@ -691,6 +710,7 @@ class PlaybackCallbackTests(unittest.IsolatedAsyncioTestCase):
             fallback.url,
             player.volume,
             attempt=0,
+            start_at=0.0,
         )
         self.assertNotIn(id(track), player.prepared_streams)
         idle_task = player.idle_task
@@ -725,7 +745,7 @@ class PlaybackCallbackTests(unittest.IsolatedAsyncioTestCase):
         play_task = asyncio.create_task(player._play_one(taken_track, generation))
         await self._wait_for_play_calls(voice, 1)
         # Models discord.py receiving EOF before it notices FFmpeg's -11 exit.
-        voice.finish()
+        voice.finish(played_seconds=0.0)
         await self._wait_for_play_calls(voice, 2)
         voice.finish()
         await asyncio.wait_for(play_task, timeout=1)
@@ -737,8 +757,8 @@ class PlaybackCallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             manager.audio_factory.create.call_args_list,
             [
-                call(prepared.url, player.volume, attempt=0),
-                call(refreshed.url, player.volume, attempt=1),
+                call(prepared.url, player.volume, attempt=0, start_at=0.0),
+                call(refreshed.url, player.volume, attempt=1, start_at=0.0),
             ],
         )
         manager.notify.assert_not_awaited()
@@ -760,9 +780,15 @@ class PlaybackCallbackTests(unittest.IsolatedAsyncioTestCase):
 
         play_task = asyncio.create_task(player._play_one(taken_track, generation))
         await self._wait_for_play_calls(voice, 1)
-        voice.finish(discord.FFmpegProcessError("FFmpeg exited with code -11"))
+        voice.finish(
+            discord.FFmpegProcessError("FFmpeg exited with code -11"),
+            played_seconds=0.0,
+        )
         await self._wait_for_play_calls(voice, 2)
-        voice.finish(discord.FFmpegProcessError("fallback exited with code -11"))
+        voice.finish(
+            discord.FFmpegProcessError("fallback exited with code -11"),
+            played_seconds=0.0,
+        )
         await asyncio.wait_for(play_task, timeout=1)
 
         self.assertEqual(voice.play_calls, 2)
@@ -772,6 +798,160 @@ class PlaybackCallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(player.current)
         self.assertEqual(tuple(player.queue), (next_track,))
         self.assertIsNotNone(player.last_error)
+
+    async def test_midtrack_ffmpeg_failure_refreshes_and_resumes_with_overlap(self):
+        voice = FakeVoiceClient()
+        track = make_track("midtrack", duration=180)
+        next_track = make_track("next")
+        prepared = StreamResource(track, "https://cdn.example/first")
+        refreshed = StreamResource(track, "https://cdn.example/refreshed")
+        player, manager, _ = make_player(voice=voice, resource=refreshed)
+        manager.audio_factory.create.side_effect = (FakeAudioSource(), FakeAudioSource())
+        player.worker_task = SimpleNamespace(done=lambda: False)
+        await player.enqueue((track, next_track), 90, prepared)
+        taken_track, generation = await player._take_next()
+
+        play_task = asyncio.create_task(player._play_one(taken_track, generation))
+        await self._wait_for_play_calls(voice, 1)
+        voice.finish(
+            discord.FFmpegProcessError("FFmpeg exited midway"),
+            played_seconds=60.0,
+        )
+        await self._wait_for_play_calls(voice, 2)
+        voice.finish(played_seconds=122.0)
+        await asyncio.wait_for(play_task, timeout=1)
+
+        self.assertEqual(
+            manager.audio_factory.create.call_args_list,
+            [
+                call(prepared.url, player.volume, attempt=0, start_at=0.0),
+                call(refreshed.url, player.volume, attempt=1, start_at=58.0),
+            ],
+        )
+        manager.resolver.stream_for.assert_awaited_once_with(track)
+        manager.recover_voice.assert_not_awaited()
+        manager.notify.assert_not_awaited()
+        self.assertIsNone(player.current)
+        self.assertEqual(tuple(player.queue), (next_track,))
+        self.assertEqual(player.resume_offset_seconds, 0.0)
+
+    async def test_premature_clean_eof_refreshes_and_resumes_instead_of_skipping(self):
+        voice = FakeVoiceClient()
+        track = make_track("premature", duration=180)
+        next_track = make_track("next")
+        prepared = StreamResource(track, "https://cdn.example/first")
+        refreshed = StreamResource(track, "https://cdn.example/refreshed")
+        player, manager, _ = make_player(voice=voice, resource=refreshed)
+        manager.audio_factory.create.side_effect = (FakeAudioSource(), FakeAudioSource())
+        player.worker_task = SimpleNamespace(done=lambda: False)
+        await player.enqueue((track, next_track), 90, prepared)
+        taken_track, generation = await player._take_next()
+
+        play_task = asyncio.create_task(player._play_one(taken_track, generation))
+        await self._wait_for_play_calls(voice, 1)
+        voice.finish(played_seconds=45.0)
+        await self._wait_for_play_calls(voice, 2)
+        voice.finish(played_seconds=137.0)
+        await asyncio.wait_for(play_task, timeout=1)
+
+        self.assertEqual(
+            manager.audio_factory.create.call_args_list,
+            [
+                call(prepared.url, player.volume, attempt=0, start_at=0.0),
+                call(refreshed.url, player.volume, attempt=1, start_at=43.0),
+            ],
+        )
+        manager.resolver.stream_for.assert_awaited_once_with(track)
+        manager.notify.assert_not_awaited()
+        self.assertIsNone(player.current)
+        self.assertEqual(tuple(player.queue), (next_track,))
+
+    async def test_refresh_oserror_is_retried_without_crashing_current_session(self):
+        config = MusicConfig(
+            queue_limit=10,
+            per_user_limit=5,
+            playback_retries=2,
+            playback_retry_backoff_seconds=0,
+        )
+        voice = FakeVoiceClient()
+        track = make_track("refresh-network", duration=180)
+        next_track = make_track("next")
+        prepared = StreamResource(track, "https://cdn.example/first")
+        refreshed = StreamResource(track, "https://cdn.example/recovered")
+        player, manager, _ = make_player(config=config, voice=voice)
+        manager.resolver.stream_for = AsyncMock(
+            side_effect=(OSError("temporary DNS failure"), refreshed)
+        )
+        manager.audio_factory.create.side_effect = (FakeAudioSource(), FakeAudioSource())
+        player.worker_task = SimpleNamespace(done=lambda: False)
+        await player.enqueue((track, next_track), 90, prepared)
+        taken_track, generation = await player._take_next()
+
+        play_task = asyncio.create_task(player._play_one(taken_track, generation))
+        await self._wait_for_play_calls(voice, 1)
+        voice.finish(
+            discord.FFmpegProcessError("stream URL expired"),
+            played_seconds=60.0,
+        )
+        await self._wait_for_play_calls(voice, 2)
+        voice.finish(played_seconds=122.0)
+        await asyncio.wait_for(play_task, timeout=1)
+
+        self.assertEqual(
+            manager.resolver.stream_for.await_args_list,
+            [call(track), call(track)],
+        )
+        self.assertEqual(
+            manager.audio_factory.create.call_args_list,
+            [
+                call(prepared.url, player.volume, attempt=0, start_at=0.0),
+                call(refreshed.url, player.volume, attempt=2, start_at=58.0),
+            ],
+        )
+        manager.notify.assert_not_awaited()
+        self.assertIsNone(player.current)
+        self.assertEqual(tuple(player.queue), (next_track,))
+
+    async def test_active_voice_disconnect_recovers_then_resumes_current_track(self):
+        voice = FakeVoiceClient()
+        track = make_track("voice-reconnect", duration=180)
+        next_track = make_track("next")
+        prepared = StreamResource(track, "https://cdn.example/first")
+        refreshed = StreamResource(track, "https://cdn.example/refreshed")
+        player, manager, _ = make_player(voice=voice, resource=refreshed)
+
+        async def recover(active_player, abort_event):
+            self.assertIs(active_player, player)
+            self.assertIs(abort_event, player.play_abort_event)
+            voice._connected = True
+            return True
+
+        manager.recover_voice.side_effect = recover
+        manager.audio_factory.create.side_effect = (FakeAudioSource(), FakeAudioSource())
+        player.worker_task = SimpleNamespace(done=lambda: False)
+        await player.enqueue((track, next_track), 90, prepared)
+        taken_track, generation = await player._take_next()
+
+        play_task = asyncio.create_task(player._play_one(taken_track, generation))
+        await self._wait_for_play_calls(voice, 1)
+        voice._connected = False
+        voice.finish(played_seconds=40.0)
+        await self._wait_for_play_calls(voice, 2)
+        voice.finish(played_seconds=142.0)
+        await asyncio.wait_for(play_task, timeout=1)
+
+        manager.recover_voice.assert_awaited_once_with(player, player.play_abort_event)
+        manager.resolver.stream_for.assert_awaited_once_with(track)
+        self.assertEqual(
+            manager.audio_factory.create.call_args_list,
+            [
+                call(prepared.url, player.volume, attempt=0, start_at=0.0),
+                call(refreshed.url, player.volume, attempt=1, start_at=38.0),
+            ],
+        )
+        manager.notify.assert_not_awaited()
+        self.assertIsNone(player.current)
+        self.assertEqual(tuple(player.queue), (next_track,))
 
     async def test_stop_while_retry_stream_refresh_is_pending_prevents_second_play(self):
         refresh_started = asyncio.Event()
@@ -797,7 +977,10 @@ class PlaybackCallbackTests(unittest.IsolatedAsyncioTestCase):
 
         play_task = asyncio.create_task(player._play_one(taken_track, generation))
         await self._wait_for_play_calls(voice, 1)
-        voice.finish(discord.FFmpegProcessError("FFmpeg exited with code -11"))
+        voice.finish(
+            discord.FFmpegProcessError("FFmpeg exited with code -11"),
+            played_seconds=0.0,
+        )
         await asyncio.wait_for(refresh_started.wait(), timeout=1)
         await player.stop()
         await asyncio.wait_for(play_task, timeout=1)
@@ -808,6 +991,7 @@ class PlaybackCallbackTests(unittest.IsolatedAsyncioTestCase):
             prepared.url,
             player.volume,
             attempt=0,
+            start_at=0.0,
         )
         manager.notify.assert_not_awaited()
         self.assertIsNone(player.current)
@@ -850,7 +1034,15 @@ class PlaybackCallbackTests(unittest.IsolatedAsyncioTestCase):
         player, manager, _ = make_player(voice=voice, resource=resource)
         manager.audio_factory.create.return_value = source
 
-        with patch("music.asyncio.wait_for", new=AsyncMock(side_effect=TimeoutError)):
+        real_wait_for = asyncio.wait_for
+
+        async def timeout_playback_only(awaitable, *, timeout):
+            if timeout >= 300:
+                awaitable.cancel()
+                raise TimeoutError
+            return await real_wait_for(awaitable, timeout=timeout)
+
+        with patch("music.asyncio.wait_for", side_effect=timeout_playback_only):
             error, _, handed_to_discord = await player._play_resource_once(
                 resource,
                 track,
@@ -918,6 +1110,7 @@ class PlaybackCallbackTests(unittest.IsolatedAsyncioTestCase):
                     resource.url,
                     player.volume,
                     attempt=1,
+                    start_at=0.0,
                 )
                 player.lock.release()
 
@@ -1214,14 +1407,14 @@ class VoiceStabilityTests(unittest.IsolatedAsyncioTestCase):
             "os.environ",
             {
                 "MUSIC_AUTO_LEAVE": "true",
-                "MUSIC_VOICE_DISCONNECT_GRACE_SECONDS": "15",
+                "MUSIC_VOICE_DISCONNECT_GRACE_SECONDS": "25",
             },
             clear=True,
         ):
             config = MusicConfig.from_env()
 
         self.assertTrue(config.auto_leave)
-        self.assertEqual(config.voice_disconnect_grace_seconds, 15)
+        self.assertEqual(config.voice_disconnect_grace_seconds, 25)
 
     async def test_stay_mode_does_not_schedule_idle_or_empty_channel_leave(self):
         player, manager, _ = make_player(
@@ -1394,8 +1587,34 @@ class VoiceStabilityTests(unittest.IsolatedAsyncioTestCase):
         await stale_player.close(disconnect=False)
         await manager.close()
 
-    async def test_persistent_voice_disconnect_tears_down_once_after_grace(self):
-        manager = self.make_manager()
+    async def test_persistent_voice_disconnect_in_stay_mode_keeps_session_for_recovery(self):
+        manager = self.make_manager(grace=0.01)
+        manager.recover_voice = AsyncMock(return_value=False)
+        voice = FakeVoiceClient()
+        voice._connected = False
+        guild = SimpleNamespace(id=77, voice_client=voice)
+        player = manager.get_or_create(guild)
+        player.current = make_track("current")
+        player.queue.append(make_track("next"))
+
+        manager.schedule_bot_disconnect_check(guild)
+        check = manager._voice_disconnect_tasks[guild.id]
+        for _ in range(100):
+            if player.last_error is not None:
+                break
+            await asyncio.sleep(0.002)
+
+        self.assertIs(manager.state_for(guild.id), player)
+        self.assertFalse(player.closed)
+        self.assertEqual(player.current.identifier, "current")
+        self.assertEqual(tuple(track.identifier for track in player.queue), ("next",))
+        self.assertIn("giữ nguyên phiên", player.last_error)
+        manager.recover_voice.assert_awaited_once_with(player)
+        self.assertFalse(check.done())
+        await manager.close()
+
+    async def test_persistent_voice_disconnect_tears_down_when_auto_leave_enabled(self):
+        manager = self.make_manager(auto_leave=True)
         voice = FakeVoiceClient()
         voice._connected = False
         guild = SimpleNamespace(id=77, voice_client=voice)
@@ -2012,7 +2231,7 @@ class AudioSourceFactoryTests(unittest.TestCase):
                 self.assertNotIn(unsupported, options)
         for required in (
             "-nostdin",
-            "-rw_timeout 15000000",
+            "-rw_timeout 45000000",
             "-reconnect 1",
             "-reconnect_streamed 1",
             "-reconnect_delay_max 5",
@@ -2021,7 +2240,7 @@ class AudioSourceFactoryTests(unittest.TestCase):
                 self.assertIn(required, options)
         self.assertEqual(
             AudioSourceFactory.SAFE_BEFORE_OPTIONS,
-            "-nostdin -rw_timeout 15000000",
+            "-nostdin -rw_timeout 45000000",
         )
 
     def test_executable_priority_is_configured_then_system_then_bundled(self):
@@ -2130,11 +2349,16 @@ class AudioSourceFactoryTests(unittest.TestCase):
 
         with (
             patch("music.discord.opus.is_loaded", return_value=False),
-            patch("music.discord.FFmpegOpusAudio", return_value=sentinel.opus) as opus,
-            patch("music.discord.FFmpegPCMAudio") as pcm,
+            patch("music.BoundedFFmpegOpusAudio", return_value=sentinel.opus) as opus,
+            patch("music.BoundedFFmpegPCMAudio") as pcm,
             patch("music.ErrorAwarePCMVolumeTransformer") as transformer,
         ):
-            source = factory.create("https://cdn.example/audio", 80, attempt=0)
+            source = factory.create(
+                "https://cdn.example/audio",
+                80,
+                attempt=0,
+                start_at=0.0,
+            )
 
         self.assertIs(source, sentinel.opus)
         pcm.assert_not_called()
@@ -2154,14 +2378,19 @@ class AudioSourceFactoryTests(unittest.TestCase):
 
         with (
             patch("music.discord.opus.is_loaded", return_value=True),
-            patch("music.discord.FFmpegPCMAudio", return_value=sentinel.pcm) as pcm,
+            patch("music.BoundedFFmpegPCMAudio", return_value=sentinel.pcm) as pcm,
             patch(
                 "music.ErrorAwarePCMVolumeTransformer",
                 return_value=sentinel.transformer,
             ) as transformer,
-            patch("music.discord.FFmpegOpusAudio") as opus,
+            patch("music.BoundedFFmpegOpusAudio") as opus,
         ):
-            source = factory.create("https://cdn.example/audio", 80, attempt=0)
+            source = factory.create(
+                "https://cdn.example/audio",
+                80,
+                attempt=0,
+                start_at=0.0,
+            )
 
         self.assertIs(source, sentinel.transformer)
         opus.assert_not_called()
@@ -2179,14 +2408,22 @@ class AudioSourceFactoryTests(unittest.TestCase):
 
         with (
             patch("music.discord.opus.is_loaded", return_value=False),
-            patch("music.discord.FFmpegOpusAudio", return_value=sentinel.opus) as opus,
+            patch("music.BoundedFFmpegOpusAudio", return_value=sentinel.opus) as opus,
         ):
-            source = factory.create("https://cdn.example/audio", 80, attempt=1)
+            source = factory.create(
+                "https://cdn.example/audio",
+                80,
+                attempt=1,
+                start_at=58.25,
+            )
 
         self.assertIs(source, sentinel.opus)
         _, kwargs = opus.call_args
         self.assertEqual(kwargs["executable"], "ffmpeg-fallback")
-        self.assertEqual(kwargs["before_options"], AudioSourceFactory.SAFE_BEFORE_OPTIONS)
+        self.assertEqual(
+            kwargs["before_options"],
+            f"{AudioSourceFactory.SAFE_BEFORE_OPTIONS} -ss 58.250",
+        )
 
 
 if __name__ == "__main__":

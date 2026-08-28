@@ -30,13 +30,14 @@ from message_cleanup import (
     scan_today_messages,
 )
 from mc_status import EndpointStatus, MinecraftStatus, concise_status, query_minecraft_status
-from music import CRAFTOPIA_AUTHOR, MusicCog, MusicConfig, MusicManager
+from music import CRAFTOPIA_AUTHOR, MUSIC_RECOVERY_BUILD, MusicCog, MusicConfig, MusicManager
 
 
 load_dotenv()
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger("craftopia-bot")
 
+BOT_BUILD = MUSIC_RECOVERY_BUILD
 ROOT = Path(__file__).resolve().parent
 MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_MB", "25")) * 1024 * 1024
 MAX_IMAGE_BYTES = int(os.getenv("MAX_IMAGE_MB", "8")) * 1024 * 1024
@@ -477,13 +478,23 @@ class CraftopiaBot(commands.Bot):
         self.create_background_task(self.stats_dashboard_loop())
 
     async def close(self) -> None:
-        for task in self.background_tasks:
-            task.cancel()
-        if self.background_tasks:
-            await asyncio.gather(*self.background_tasks, return_exceptions=True)
-        await self.music.close()
-        await self.ai.close()
-        await super().close()
+        logger.info(
+            "CraftopiaBot.close started build=%s background_tasks=%s",
+            BOT_BUILD,
+            len(self.background_tasks),
+        )
+        completed = False
+        try:
+            for task in self.background_tasks:
+                task.cancel()
+            if self.background_tasks:
+                await asyncio.gather(*self.background_tasks, return_exceptions=True)
+            await self.music.close()
+            await self.ai.close()
+            await super().close()
+            completed = True
+        finally:
+            logger.info("CraftopiaBot.close finished build=%s completed=%s", BOT_BUILD, completed)
 
     def create_background_task(self, coroutine) -> None:
         task = asyncio.create_task(coroutine)
@@ -1883,7 +1894,12 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
 
 @bot.event
 async def on_ready() -> None:
-    logger.info("Craftopia bot logged in as %s (%s)", bot.user, bot.user.id if bot.user else "unknown")
+    logger.info(
+        "Craftopia bot logged in as %s (%s) build=%s",
+        bot.user,
+        bot.user.id if bot.user else "unknown",
+        BOT_BUILD,
+    )
     logger.info(
         "AI model=%s knowledge_chunks=%s auto_reply_channels=%s stats_channel=%s "
         "presence_mode=%s music=%s music_auto_leave=%s voice_grace=%ss",
