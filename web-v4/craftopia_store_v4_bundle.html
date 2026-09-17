@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Craftopia Store • Coin tự động</title>
+<meta name="description" content="Nạp Coin và nhận Daily Reward cho Craftopia">
+<style>:root{
+  --bg:#07111d;--bg2:#0a1624;--panel:#0d1b2a;--panel2:#102235;--line:rgba(142,196,255,.12);
+  --text:#f4f8ff;--muted:#8ea8c3;--cyan:#35c7ff;--cyan2:#71e4ff;--blue:#4b7dff;--green:#54e0a8;
+  --danger:#ff7285;--gold:#f7cf67;--shadow:0 24px 70px rgba(0,0,0,.34);--r:24px;
+}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:linear-gradient(180deg,#07111d 0%,#08131f 60%,#07101a 100%);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;overflow-x:hidden}
+a{text-decoration:none;color:inherit}button,input{font:inherit}.shell{width:min(1180px,calc(100% - 36px));margin:auto}.ambient{position:fixed;border-radius:999px;filter:blur(110px);opacity:.18;pointer-events:none;z-index:-1}.ambient-one{width:420px;height:420px;background:#176cff;top:9%;right:-160px}.ambient-two{width:480px;height:480px;background:#16a7d5;bottom:8%;left:-220px}
+.site-header{position:sticky;top:0;z-index:50;background:rgba(5,13,23,.72);backdrop-filter:blur(18px);border-bottom:1px solid rgba(255,255,255,.06)}.nav-wrap{height:74px;display:flex;align-items:center;justify-content:space-between;gap:24px}.brand{display:flex;align-items:center;gap:12px;font-size:20px;font-weight:900;letter-spacing:.6px}.brand b{color:var(--cyan)}.brand-mark{width:34px;height:34px;position:relative;display:block;transform:rotate(-3deg)}.brand-mark i{position:absolute;background:linear-gradient(135deg,var(--cyan2),var(--blue));box-shadow:0 0 24px rgba(53,199,255,.35)}.brand-mark i:nth-child(1){width:21px;height:21px;left:2px;top:6px;clip-path:polygon(50% 0,100% 25%,50% 50%,0 25%)}.brand-mark i:nth-child(2){width:21px;height:20px;left:2px;top:11px;clip-path:polygon(0 0,50% 25%,50% 100%,0 75%);opacity:.8}.brand-mark i:nth-child(3){width:21px;height:20px;left:12px;top:11px;clip-path:polygon(50% 25%,100% 0,100% 75%,50% 100%);opacity:.62}.nav-wrap nav{display:flex;gap:30px;color:#adc2d8;font-size:14px;font-weight:700}.nav-wrap nav a{transition:.2s}.nav-wrap nav a:hover{color:#fff}.nav-cta{padding:11px 16px;border:1px solid rgba(113,228,255,.25);border-radius:12px;background:linear-gradient(180deg,rgba(52,199,255,.13),rgba(75,125,255,.08));font-weight:800;font-size:14px}.nav-cta span{color:var(--cyan);margin-left:5px}
+.hero-section{padding:92px 0 48px;position:relative}.hero-grid{display:grid;grid-template-columns:1.08fr .92fr;gap:64px;align-items:center}.hero-copy h1{font-size:clamp(50px,6vw,82px);line-height:.98;margin:22px 0 26px;letter-spacing:-3.2px}.hero-copy h1 span{background:linear-gradient(90deg,#fff 0%,#71e4ff 42%,#5f8dff 100%);-webkit-background-clip:text;color:transparent}.hero-copy>p{font-size:18px;line-height:1.75;color:var(--muted);max-width:680px;margin:0}.eyebrow{display:inline-flex;align-items:center;gap:9px;color:#b7d2e9;font-size:12px;font-weight:900;letter-spacing:1.8px}.eyebrow i{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 18px var(--green)}.eyebrow b{font-size:10px;letter-spacing:.8px;color:#8ff4c8;border:1px solid rgba(84,224,168,.22);padding:5px 8px;border-radius:999px}.hero-actions{display:flex;gap:12px;margin:34px 0 24px}.btn{display:inline-flex;align-items:center;justify-content:center;padding:14px 21px;border-radius:14px;font-weight:900;transition:.25s}.btn.primary{background:linear-gradient(135deg,#37c9ff,#4b7dff);box-shadow:0 18px 42px rgba(52,161,255,.24)}.btn.primary:hover{transform:translateY(-2px);box-shadow:0 22px 54px rgba(52,161,255,.34)}.btn.secondary{border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.035);color:#cbd9e8}.hero-meta{display:flex;gap:20px;flex-wrap:wrap;color:#91abc4;font-size:12px;font-weight:800}.hero-console{border:1px solid rgba(117,190,255,.13);background:linear-gradient(180deg,rgba(16,35,55,.88),rgba(8,19,32,.92));border-radius:28px;padding:22px;box-shadow:var(--shadow);position:relative;overflow:hidden}.hero-console:before{content:"";position:absolute;inset:-1px;background:linear-gradient(135deg,rgba(113,228,255,.14),transparent 33%,transparent 68%,rgba(75,125,255,.13));pointer-events:none}.console-head{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding-bottom:16px;font-size:11px;position:relative}.console-head span{font-weight:900;letter-spacing:1px}.console-head span i{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-right:7px;box-shadow:0 0 13px var(--green)}.console-head small{color:#7892ad}.rate-card{padding:27px 3px 26px;display:flex;flex-direction:column}.rate-card small{color:#87a3be}.rate-card strong{font-size:42px;letter-spacing:-2px;margin:5px 0}.rate-card strong em{color:var(--cyan);font-style:normal}.rate-card span{color:#69839c;font-size:12px}.console-flow{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.console-flow div{border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.025);padding:15px 12px;border-radius:16px}.console-flow b{display:block;font-size:11px;color:var(--cyan);margin-bottom:12px}.console-flow span{font-size:13px;font-weight:800}.console-flow small{display:block;color:#7088a0;font-size:10px;margin-top:5px;line-height:1.4}
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid rgba(255,255,255,.06);border-radius:22px;background:rgba(255,255,255,.025);overflow:hidden;margin-bottom:96px}.stats-row>div{padding:22px 26px;display:flex;align-items:center;gap:16px}.stats-row>div+div{border-left:1px solid rgba(255,255,255,.06)}.stats-row b{font-size:27px;color:#eaf7ff}.stats-row span{font-weight:800;font-size:13px}.stats-row small{display:block;color:#708aa4;font-weight:600;margin-top:4px}
+.section{padding:0 0 104px}.section-head{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:26px}.section-head em,.security-copy em,.reward-card>em,.quota-card>em,.flow-card>em{font-style:normal;color:var(--cyan);font-size:11px;letter-spacing:2px;font-weight:900}.section-head h2,.security-copy h2{font-size:42px;line-height:1.08;letter-spacing:-1.8px;margin:7px 0}.section-head p,.security-copy p{color:var(--muted);margin:0}.section-head>strong{font-size:14px;border:1px solid rgba(113,228,255,.16);background:rgba(53,199,255,.06);padding:12px 15px;border-radius:13px}.section-head>strong i{color:var(--cyan);font-style:normal}.checkout-grid{display:grid;grid-template-columns:1.08fr .92fr .72fr;gap:15px}.panel{border:1px solid rgba(255,255,255,.07);background:linear-gradient(180deg,rgba(15,31,47,.92),rgba(9,21,34,.95));border-radius:var(--r);padding:22px;box-shadow:0 16px 48px rgba(0,0,0,.15)}.panel-title{display:flex;gap:12px;align-items:flex-start}.panel-title>span{min-width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:rgba(53,199,255,.09);border:1px solid rgba(53,199,255,.17);color:var(--cyan);font-size:11px;font-weight:900}.panel-title h3{margin:0;font-size:18px}.panel-title p{margin:5px 0 0;color:#7893ad;font-size:12px}.setup-panel label,.reward-card label{display:block;color:#9db4ca;font-size:12px;font-weight:800;margin:26px 0 8px}.text-field{height:50px;border:1px solid rgba(255,255,255,.08);background:#081827;border-radius:14px;display:flex;align-items:center;padding:0 14px;transition:.2s}.text-field:focus-within{border-color:rgba(53,199,255,.44);box-shadow:0 0 0 4px rgba(53,199,255,.06)}.text-field>b{color:var(--cyan)}.text-field input{flex:1;background:transparent;border:0;outline:0;color:#fff;padding:0 12px;font-weight:700}.text-field input::placeholder{color:#4e6a84}.text-field i{font-style:normal;color:#56728d;font-size:10px}.mini-title{margin-top:24px}.packs{display:grid;grid-template-columns:repeat(2,1fr);gap:9px;margin-top:15px}.packs button{position:relative;text-align:left;border:1px solid rgba(255,255,255,.07);background:#0a1a29;color:#fff;border-radius:15px;padding:14px;cursor:pointer;transition:.2s}.packs button:hover{border-color:rgba(53,199,255,.26);transform:translateY(-1px)}.packs button.active{border-color:rgba(53,199,255,.54);background:linear-gradient(180deg,rgba(53,199,255,.1),rgba(75,125,255,.06));box-shadow:inset 0 0 30px rgba(53,199,255,.05)}.packs small{display:block;color:#7f99b0;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.8px}.packs small em{float:right;font-style:normal;color:#96ecff;font-size:8px;background:rgba(53,199,255,.1);padding:3px 5px;border-radius:6px}.packs strong{display:block;font-size:25px;margin:9px 0 5px}.packs strong i{font-style:normal;font-size:10px;color:#7390aa}.packs button>b{font-size:11px;color:#adc0d1}.packs button>span{position:absolute;right:11px;bottom:10px;color:var(--cyan)}.wide-btn{margin-top:18px;width:100%;height:51px;border:0;border-radius:14px;background:linear-gradient(135deg,#37c9ff,#5079ff);color:#fff;font-weight:900;cursor:pointer;box-shadow:0 14px 30px rgba(49,142,255,.18);transition:.2s}.wide-btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 18px 34px rgba(49,142,255,.28)}.wide-btn:disabled{opacity:.45;cursor:not-allowed}.alert{margin-top:13px;padding:11px 13px;border:1px solid rgba(255,114,133,.19);background:rgba(255,114,133,.07);color:#ffb2be;border-radius:11px;font-size:12px}.payment-panel{min-height:586px}.qr-shell{position:relative;width:min(100%,370px);aspect-ratio:1;margin:24px auto 12px;padding:13px;border-radius:24px;background:#fff;box-shadow:0 22px 55px rgba(0,0,0,.32),0 0 0 1px rgba(113,228,255,.14),0 0 40px rgba(53,199,255,.11);overflow:hidden}.qr-shell img{width:100%;height:100%;object-fit:contain;border-radius:12px}.scan-line{position:absolute;left:5%;right:5%;height:2px;background:linear-gradient(90deg,transparent,var(--cyan),transparent);box-shadow:0 0 12px var(--cyan);animation:scan 3.1s ease-in-out infinite;z-index:3}.qr-caption{text-align:center;color:#728ba3;font-size:10px;margin-bottom:15px}.qr-caption b{color:#9adff2}.bank-list{display:grid;gap:7px}.bank-list>div{display:grid;grid-template-columns:105px 1fr auto;gap:8px;align-items:center;padding:9px 10px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.05);border-radius:11px;font-size:11px}.bank-list span{color:#6f8aa4}.bank-list b{word-break:break-all}.bank-list button{border:0;background:rgba(53,199,255,.1);color:#8ce8ff;border-radius:7px;padding:5px 7px;font-size:9px;cursor:pointer}.bank-list .important{border-color:rgba(53,199,255,.16);background:rgba(53,199,255,.045)}.bank-list .important b{color:#8eeaff}.bank-list .amount strong{font-size:16px}.empty-state{height:450px;display:grid;place-items:center;align-content:center;text-align:center;border:1px dashed rgba(255,255,255,.09);border-radius:18px;margin-top:22px;color:#7790aa;padding:30px}.empty-state div{font-size:52px;color:#46647f}.empty-state h4{color:#dce9f4;margin:12px 0 5px}.empty-state p{margin:0;font-size:12px;max-width:250px}.timeline{margin-top:28px}.timeline>div{display:flex;gap:12px;position:relative;padding-bottom:29px;color:#657f98}.timeline>div:not(:last-child):after{content:"";position:absolute;width:1px;left:15px;top:33px;bottom:0;background:rgba(255,255,255,.07)}.timeline>div span{width:31px;height:31px;border-radius:50%;display:grid;place-items:center;background:#0a1a29;border:1px solid rgba(255,255,255,.08);font-size:10px;font-weight:900;z-index:2}.timeline>div.active{color:#d7eafa}.timeline>div.active span{border-color:rgba(53,199,255,.4);background:rgba(53,199,255,.09);color:var(--cyan);box-shadow:0 0 18px rgba(53,199,255,.08)}.timeline>div.done span{background:rgba(84,224,168,.1);border-color:rgba(84,224,168,.26);color:#8ef1c7}.timeline p{margin:2px 0}.timeline p b{display:block;font-size:12px}.timeline p small{display:block;font-size:10px;margin-top:4px}.order-mini{border-top:1px solid rgba(255,255,255,.06);padding-top:13px}.order-mini p{display:flex;justify-content:space-between;gap:15px;font-size:10px;margin:10px 0}.order-mini span{color:#6f879e}.order-mini b{text-align:right}.success-box{margin-top:15px;border:1px solid rgba(84,224,168,.2);background:rgba(84,224,168,.06);border-radius:14px;padding:13px;display:flex;gap:10px;align-items:center}.success-box>b{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:rgba(84,224,168,.12);color:#8df0c8}.success-box span{font-size:12px;font-weight:900}.success-box small{display:block;color:#71a78f;margin-top:3px}
+.reward-section{background:linear-gradient(180deg,rgba(5,15,25,.15),rgba(11,28,45,.48),rgba(5,15,25,.15));border-top:1px solid rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.04);padding-top:92px}.reward-grid{display:grid;grid-template-columns:1.08fr .7fr .82fr;gap:15px}.reward-title{display:flex;gap:12px;align-items:center}.reward-title>span{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;background:rgba(53,199,255,.08);border:1px solid rgba(53,199,255,.16);color:var(--cyan)}.reward-title h3{margin:0}.reward-title p{margin:5px 0 0;color:#7892aa;font-size:12px}.reward-title p b{color:#dfefff}.info-note{display:flex;gap:10px;align-items:flex-start;margin-top:13px;color:#6f8aa2;font-size:10px;line-height:1.5}.info-note>b{width:18px;height:18px;display:grid;place-items:center;border-radius:50%;background:rgba(53,199,255,.08);color:var(--cyan);flex:0 0 auto}.quota-card{text-align:center}.quota-card>em,.flow-card>em{display:block;text-align:left}.quota-ring{width:155px;height:155px;border-radius:50%;margin:25px auto 18px;display:grid;place-items:center;position:relative}.quota-ring:before{content:"";position:absolute;inset:9px;border-radius:50%;background:#0b1d2e;border:1px solid rgba(255,255,255,.06)}.quota-ring span{position:relative;z-index:2;color:#91aac1}.quota-ring b{font-size:34px;color:#fff}.quota-card h3{font-size:17px;margin:0}.quota-card p{color:#728da5;font-size:11px;line-height:1.6}.chips{display:flex;justify-content:center;gap:5px;flex-wrap:wrap}.chips span{font-size:8px;padding:6px 8px;border-radius:999px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.06);color:#7892ab}.flow-card h3{font-size:21px;line-height:1.2;margin:11px 0 25px}.flow-list p{display:flex;gap:11px;align-items:center;margin:18px 0}.flow-list p>b{width:29px;height:29px;display:grid;place-items:center;border-radius:9px;background:rgba(53,199,255,.08);border:1px solid rgba(53,199,255,.15);color:var(--cyan);font-size:10px}.flow-list span{font-size:12px;font-weight:900}.flow-list small{display:block;color:#718ba2;font-size:9px;margin-top:3px}
+.security-section{padding:100px 0 110px;display:grid;grid-template-columns:.72fr 1.28fr;gap:70px;align-items:end}.security-copy h2{font-size:48px;margin:10px 0 20px}.security-copy p{line-height:1.7}.security-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}.security-grid article{padding:20px;border-radius:17px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.025)}.security-grid article>b{font-size:10px;color:var(--cyan)}.security-grid h3{font-size:15px;margin:13px 0 8px}.security-grid p{color:#70899f;font-size:10px;line-height:1.5;margin:0}
+footer{border-top:1px solid rgba(255,255,255,.05);background:#050d16}.footer-wrap{height:90px;display:flex;align-items:center;justify-content:space-between}.footer-wrap div{display:flex;gap:8px;font-size:14px}.footer-wrap div b{color:#dff7ff}.footer-wrap div span{color:#58758f}.footer-wrap p{font-size:10px;color:#526c85}
+.result-modal{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:20px}.modal-backdrop{position:absolute;inset:0;border:0;background:rgba(3,8,15,.78);backdrop-filter:blur(10px)}.result-card{width:min(460px,100%);position:relative;border-radius:28px;padding:34px;background:linear-gradient(180deg,#102438,#0a1826);border:1px solid rgba(255,255,255,.1);box-shadow:0 35px 110px rgba(0,0,0,.55);text-align:center;animation:modalIn .38s cubic-bezier(.2,.9,.2,1)}.result-card:before{content:"";position:absolute;inset:0;border-radius:inherit;background:radial-gradient(circle at 50% 0,rgba(53,199,255,.12),transparent 42%);pointer-events:none}.modal-close{position:absolute;right:16px;top:14px;width:34px;height:34px;border-radius:50%;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);color:#9db5ca;font-size:22px;cursor:pointer}.result-icon{width:82px;height:82px;margin:0 auto 18px;position:relative;display:grid;place-items:center}.result-icon span{width:62px;height:62px;border-radius:50%;display:grid;place-items:center;background:rgba(84,224,168,.11);border:1px solid rgba(84,224,168,.3);color:#8df1c7;font-size:31px;font-weight:900;z-index:2}.result-modal.bad .result-icon span{background:rgba(255,114,133,.08);border-color:rgba(255,114,133,.2);color:#ff9bab}.result-icon i{position:absolute;inset:4px;border:1px solid rgba(84,224,168,.13);border-radius:50%;animation:pulseRing 2.2s ease-out infinite}.result-icon i:last-child{animation-delay:.9s}.result-kicker{color:var(--cyan);font-size:9px;letter-spacing:2px;font-weight:900}.result-card h2{font-size:30px;margin:9px 0}.result-card>p{color:#87a0b7;line-height:1.6;font-size:12px;margin:0 auto 20px;max-width:350px}.receipt{background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.06);border-radius:16px;padding:8px 14px;margin:18px 0}.receipt div{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.045);font-size:11px}.receipt div:last-child{border-bottom:0}.receipt span{color:#718ba3}.receipt b.accent{color:#8ce7ff}.sending{color:#96c8b5}.sending i{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green);margin-right:5px}.modal-action{width:100%;height:48px;border:0;border-radius:13px;background:linear-gradient(135deg,#35c7ff,#4b7dff);color:#fff;font-weight:900;cursor:pointer}.result-card>small{display:block;color:#617b93;font-size:9px;margin-top:10px}
+@keyframes scan{0%,100%{top:10%;opacity:.3}50%{top:88%;opacity:1}}@keyframes modalIn{from{transform:translateY(18px) scale(.96);opacity:0}to{transform:none;opacity:1}}@keyframes pulseRing{0%{transform:scale(.8);opacity:.8}100%{transform:scale(1.45);opacity:0}}
+@media(max-width:1000px){.hero-grid,.security-section{grid-template-columns:1fr}.checkout-grid{grid-template-columns:1fr 1fr}.status-panel{grid-column:1/-1}.reward-grid{grid-template-columns:1fr 1fr}.flow-card{grid-column:1/-1}.hero-console{max-width:650px}.stats-row{grid-template-columns:repeat(2,1fr)}.stats-row>div:nth-child(3){border-left:0;border-top:1px solid rgba(255,255,255,.06)}.stats-row>div:nth-child(4){border-top:1px solid rgba(255,255,255,.06)}}
+@media(max-width:720px){.shell{width:min(100% - 22px,1180px)}.nav-wrap{height:64px}.nav-wrap nav{display:none}.nav-cta{font-size:12px;padding:9px 12px}.hero-section{padding:62px 0 34px}.hero-grid{gap:30px}.hero-copy h1{font-size:50px;letter-spacing:-2.2px}.hero-copy>p{font-size:15px}.hero-actions{flex-direction:column}.hero-actions .btn{width:100%}.hero-meta{gap:10px}.hero-console{padding:16px}.console-flow{grid-template-columns:1fr}.stats-row{margin-bottom:70px}.stats-row>div{padding:17px}.stats-row b{font-size:22px}.section-head{align-items:flex-start;gap:18px}.section-head h2{font-size:34px}.section-head>strong{display:none}.checkout-grid,.reward-grid{grid-template-columns:1fr}.status-panel,.flow-card{grid-column:auto}.panel{padding:17px}.packs{grid-template-columns:1fr 1fr}.qr-shell{width:100%;max-width:370px}.bank-list>div{grid-template-columns:90px 1fr auto}.security-section{padding:70px 0}.security-copy h2{font-size:38px}.security-grid{grid-template-columns:1fr 1fr}.footer-wrap{height:auto;padding:28px 0;align-items:flex-start;gap:15px;flex-direction:column}.footer-wrap p{margin:0}}
+@media(max-width:460px){.hero-copy h1{font-size:42px}.stats-row{grid-template-columns:1fr 1fr}.stats-row>div{gap:11px;padding:14px}.stats-row span{font-size:11px}.stats-row small{font-size:9px}.packs{grid-template-columns:1fr}.security-grid{grid-template-columns:1fr}.console-head small{display:none}.result-card{padding:28px 20px}.section{padding-bottom:78px}}
+</style>
+<style>
+/* static-bundle helpers */
+.hidden{display:none!important}
+.package-btn{width:100%}
+#topup-error,#free-error{margin-top:12px}
+.result-modal.hidden{display:none}
+button:disabled{opacity:.48;cursor:not-allowed;transform:none!important}
+</style>
+</head>
+<body>
+<div class="ambient ambient-one"></div><div class="ambient ambient-two"></div>
+<header class="site-header">
+  <div class="shell nav-wrap">
+    <a class="brand" href="#top"><span class="brand-mark"><i></i><i></i><i></i></span><span>CRAFT<b>OPIA</b></span></a>
+    <nav><a href="#topup">Nạp Coin</a><a href="#free">Coin Free</a><a href="#security">Bảo mật</a></nav>
+    <a href="#topup" class="nav-cta">Nạp ngay <span>↗</span></a>
+  </div>
+</header>
+
+<div id="result-modal" class="result-modal hidden">
+  <button class="modal-backdrop" aria-label="Đóng"></button>
+  <section class="result-card">
+    <button class="modal-close">×</button>
+    <div class="result-icon"><span id="modal-icon">✓</span><i></i><i></i></div>
+    <div class="result-kicker">CRAFTOPIA REWARD</div>
+    <h2 id="modal-title">Vượt link thành công!</h2>
+    <p id="modal-message"></p>
+    <div id="modal-receipt" class="receipt">
+      <div><span>Ingame</span><b id="modal-player">Craftopia Player</b></div>
+      <div><span>Phần thưởng</span><b id="modal-coins" class="accent">+20 Coin</b></div>
+      <div><span>Trạng thái</span><b class="sending"><i></i> Đang gửi vào game</b></div>
+    </div>
+    <button class="modal-action">Tuyệt, tiếp tục</button>
+    <small id="modal-small">Không cần bấm nhận thêm lần nữa.</small>
+  </section>
+</div>
+
+<main id="top">
+<section class="hero-section">
+  <div class="shell hero-grid">
+    <div class="hero-copy">
+      <div class="eyebrow"><i></i> CRAFTOPIA STORE <b>ONLINE</b></div>
+      <h1>Nạp Coin.<br><span>Nhận ngay trong game.</span></h1>
+      <p>Một trang duy nhất cho topup và Daily Reward. Backend xác minh mọi giao dịch trước khi worker gửi Coin vào Minecraft.</p>
+      <div class="hero-actions"><a class="btn primary" href="#topup">Nạp Coin <b>→</b></a><a class="btn secondary" href="#free">Coin miễn phí</a></div>
+      <div class="hero-meta"><span>✓ 1.000đ = 1 Coin</span><span>✓ Auto 24/7</span><span>✓ Không cộng trùng</span></div>
+    </div>
+    <aside class="hero-console">
+      <div class="console-head"><span><i></i> SYSTEM LIVE</span><small>Craftopia Network</small></div>
+      <div class="rate-card"><small>Tỉ lệ hiện tại</small><strong>1K <em>=</em> 1 Coin</strong><span>Cố định cho mọi gói</span></div>
+      <div class="console-flow"><div><b>01</b><span>Nhập ingame<small>Đúng tên người chơi</small></span></div><div><b>02</b><span>Quét QR<small>Đúng tiền + nội dung</small></span></div><div><b>03</b><span>Nhận Coin<small>Worker tự giao</small></span></div></div>
+    </aside>
+  </div>
+</section>
+
+<section class="shell stats-row">
+  <div><b>4</b><span>Gói nạp<small>10K — 100K</small></span></div>
+  <div><b>2</b><span>Lượt free<small>Mỗi ngày</small></span></div>
+  <div><b>24/7</b><span>Tự động<small>Không cần admin online</small></span></div>
+  <div><b>1×</b><span>Mỗi giao dịch<small>Idempotent</small></span></div>
+</section>
+
+<section id="topup" class="shell section topup-section">
+  <div class="section-head"><div><em>TOP UP</em><h2>Nạp Coin</h2><p>Nhập ingame, chọn gói và quét QR.</p></div><strong>1.000đ <i>=</i> 1 Coin</strong></div>
+  <div class="checkout-grid">
+    <article class="panel setup-panel">
+      <div class="panel-title"><span>01</span><div><h3>Thông tin người chơi</h3><p>Coin sẽ được gửi đúng tài khoản này.</p></div></div>
+      <label>Tên ingame</label>
+      <div class="text-field"><b>#</b><input id="player" maxlength="16" placeholder="Ví dụ: NguyenVanA"><i id="player-count">0/16</i></div>
+      <div class="panel-title mini-title"><span>02</span><div><h3>Chọn gói</h3><p>Tỉ lệ cố định, không bonus ẩn.</p></div></div>
+      <div class="packs" id="packs"></div>
+      <div id="topup-error" class="alert hidden"></div>
+      <button id="create-topup" class="wide-btn" disabled>Tạo đơn 50.000đ <b>→</b></button>
+    </article>
+
+    <article class="panel payment-panel">
+      <div class="panel-title"><span>03</span><div><h3>Thanh toán</h3><p>Quét bằng ứng dụng ngân hàng.</p></div></div>
+      <div id="payment-empty" class="empty-state"><div>▦</div><h4>QR sẽ hiện ở đây</h4><p>Tạo đơn để nhận QR đúng số tiền và nội dung.</p></div>
+      <div id="payment-live" class="hidden">
+        <div class="qr-shell"><div class="scan-line"></div><img id="qr-image" alt="QR thanh toán"></div>
+        <div class="qr-caption">QR cho đơn <b id="qr-code"></b></div>
+        <div class="bank-list">
+          <div><span>Ngân hàng</span><b id="bank-id"></b></div>
+          <div><span>Số tài khoản</span><b id="bank-account"></b><button data-copy="bank-account">Copy</button></div>
+          <div><span>Chủ tài khoản</span><b id="bank-name"></b></div>
+          <div class="important"><span>Nội dung CK</span><b id="transfer-content"></b><button data-copy="transfer-content">Copy</button></div>
+          <div class="amount"><span>Số tiền</span><strong id="amount"></strong></div>
+        </div>
+      </div>
+    </article>
+
+    <article class="panel status-panel">
+      <div class="panel-title"><span>04</span><div><h3>Trạng thái đơn</h3><p>Cập nhật tự động mỗi 5 giây.</p></div></div>
+      <div class="timeline">
+        <div id="step-1" class="active"><span>1</span><p><b>Thanh toán</b><small>Chờ tạo đơn</small></p></div>
+        <div id="step-2"><span>2</span><p><b>Xác minh</b><small>Chưa bắt đầu</small></p></div>
+        <div id="step-3"><span>3</span><p><b>Giao Coin</b><small>Chưa bắt đầu</small></p></div>
+      </div>
+      <div class="order-mini"><p><span>Ingame</span><b id="order-player">—</b></p><p><span>Gói</span><b id="order-pack">50 Coin</b></p><p><span>Mã đơn</span><b id="order-code">—</b></p></div>
+      <div id="success-box" class="success-box hidden"><b>✓</b><span>Hoàn tất<small>Coin đã vào Minecraft.</small></span></div>
+    </article>
+  </div>
+</section>
+
+<section id="free" class="reward-section">
+  <div class="shell section">
+    <div class="section-head"><div><em>DAILY REWARD</em><h2>Coin miễn phí</h2><p>Hoàn tất shortlink và quay về Craftopia để nhận Coin tự động.</p></div><strong>Tối đa <i>2</i> lượt / ngày</strong></div>
+    <div class="reward-grid">
+      <article class="panel reward-card">
+        <div class="reward-title"><span>✦</span><div><h3>Daily Reward</h3><p>Mỗi lượt nhận <b id="reward-coins">20 Coin</b></p></div></div>
+        <label>Tên ingame</label>
+        <div class="text-field"><b>#</b><input id="free-player" maxlength="16" placeholder="Ví dụ: NguyenVanA"><i id="free-count">0/16</i></div>
+        <div id="free-error" class="alert hidden"></div>
+        <button id="create-free" class="wide-btn" disabled>Tạo link nhận Coin <b>↗</b></button>
+        <div class="info-note"><b>i</b><span>Vượt link xong web sẽ tự hiện “Thành công” và đưa reward vào queue Minecraft.</span></div>
+      </article>
+
+      <article class="panel quota-card">
+        <em>HÔM NAY</em>
+        <div id="quota-ring" class="quota-ring" style="background:conic-gradient(#35c7ff 0deg,rgba(255,255,255,.06) 0deg)"><span><b id="quota-done">0</b> / <span id="quota-limit">2</span></span></div>
+        <h3 id="quota-title">Kiểm tra lượt của bạn</h3>
+        <p id="quota-text">Nhập ingame rồi rời ô để xem quota.</p>
+        <div class="chips"><span>Token 1 lần</span><span>IP + thiết bị</span><span>Anti replay</span></div>
+      </article>
+
+      <article class="panel flow-card"><em>LUỒNG XÁC MINH</em><h3>Không cần bấm claim lần hai.</h3><div class="flow-list"><p><b>1</b><span>Tạo link<small>Backend tạo claim riêng</small></span></p><p><b>2</b><span>Hoàn tất shortlink<small>Quay về Craftopia</small></span></p><p><b>3</b><span>Auto give<small>Queue → Minecraft worker</small></span></p></div></article>
+    </div>
+  </div>
+</section>
+
+<section id="security" class="shell security-section">
+  <div class="security-copy"><em>SECURITY</em><h2>Gọn ở ngoài.<br>Chặt ở backend.</h2><p>Giá, Coin, payment và reward đều được server xác minh thay vì tin dữ liệu từ trình duyệt.</p></div>
+  <div class="security-grid"><article><b>01</b><h3>Atomic & idempotent</h3><p>Mỗi payment/reward chỉ được giao một lần.</p></article><article><b>02</b><h3>One-time claim</h3><p>Token hết hạn và không thể dùng lại.</p></article><article><b>03</b><h3>Fingerprint + IP</h3><p>Giảm abuse và chia sẻ claim.</p></article><article><b>04</b><h3>Worker polling</h3><p>Minecraft không cần mở API inbound.</p></article></div>
+</section>
+</main>
+
+<footer><div class="shell footer-wrap"><div><b>CRAFTOPIA</b><span>Coin Store</span></div><p>1.000đ = 1 Coin • Auto payment • Daily reward</p></div></footer>
+
+<script>
+const API='https://rlbgvgosxrhqnppbrtey.supabase.co/functions/v1/craftopia-api';
+const PACKAGES=[
+  {id:'starter',name:'Starter',price:10000,coins:10},
+  {id:'plus',name:'Plus',price:20000,coins:20},
+  {id:'pro',name:'Popular',price:50000,coins:50,popular:true},
+  {id:'legend',name:'Legend',price:100000,coins:100}
+];
+let packageId='pro', topup=null, poller=null, freeStatus=null;
+const $=id=>document.getElementById(id);
+const vnd=n=>n.toLocaleString('vi-VN')+'đ';
+function actionUrl(action, params={}){const u=new URL(API);u.searchParams.set('action',action);Object.entries(params).forEach(([k,v])=>u.searchParams.set(k,String(v)));return u;}
+async function api(action,{method='GET',body,params}={}){const r=await fetch(actionUrl(action,params),{method,headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined,cache:'no-store'});let j={};try{j=await r.json()}catch{}if(!r.ok)throw new Error(j.error||'Có lỗi xảy ra');return j;}
+function setError(id,msg){const e=$(id);if(!msg){e.classList.add('hidden');e.textContent='';return}e.textContent=msg;e.classList.remove('hidden')}
+function renderPacks(){$('packs').innerHTML=PACKAGES.map(p=>`<button type="button" class="package-btn ${packageId===p.id?'active':''}" data-pack="${p.id}"><small>${p.name}${p.popular?'<em>Phổ biến</em>':''}</small><strong>${p.coins}<i> Coin</i></strong><b>${vnd(p.price)}</b>${packageId===p.id?'<span>✓</span>':''}</button>`).join('');const p=PACKAGES.find(x=>x.id===packageId);$('create-topup').innerHTML=`Tạo đơn ${vnd(p.price)} <b>→</b>`;$('order-pack').textContent=`${p.coins} Coin`;document.querySelectorAll('[data-pack]').forEach(b=>b.onclick=()=>{packageId=b.dataset.pack;renderPacks()});}
+renderPacks();
+$('player').addEventListener('input',e=>{$('player-count').textContent=e.target.value.length+'/16';$('create-topup').disabled=!e.target.value.trim();if(!topup)$('order-player').textContent=e.target.value.trim()||'—'});
+$('free-player').addEventListener('input',e=>{$('free-count').textContent=e.target.value.length+'/16';$('create-free').disabled=!e.target.value.trim()||(freeStatus?.remaining??1)<=0});
+$('free-player').addEventListener('blur',()=>loadFreeStatus());
+$('create-topup').onclick=async()=>{const btn=$('create-topup'),player=$('player').value.trim();setError('topup-error','');btn.disabled=true;btn.textContent='Đang tạo đơn...';try{topup=await api('topup-create',{method:'POST',body:{player,packageId}});renderTopup();if(poller)clearInterval(poller);poller=setInterval(refreshOrder,5000)}catch(e){setError('topup-error',e.message)}finally{const p=PACKAGES.find(x=>x.id===packageId);btn.innerHTML=`Tạo đơn ${vnd(p.price)} <b>→</b>`;btn.disabled=!$('player').value.trim()}};
+async function refreshOrder(){if(!topup?.order?.code)return;try{const j=await api('topup-status',{params:{code:topup.order.code}});topup.order=j.order;renderStatus()}catch{}}
+function renderTopup(){$('payment-empty').classList.add('hidden');if(topup.payment.configured){$('payment-live').classList.remove('hidden');$('qr-image').src=topup.payment.qrUrl;$('qr-code').textContent=topup.order.code;$('bank-id').textContent=topup.payment.bankId;$('bank-account').textContent=topup.payment.bankAccount;$('bank-name').textContent=topup.payment.bankAccountName;$('transfer-content').textContent=topup.payment.transferContent;$('amount').textContent=vnd(topup.order.price)}else{$('payment-live').classList.add('hidden');$('payment-empty').classList.remove('hidden');$('payment-empty').innerHTML='<div>!</div><h4>Ngân hàng chưa cấu hình</h4><p>Hoàn tất Edge Function Secrets để QR xuất hiện.</p>'}renderStatus();}
+function renderStatus(){if(!topup)return;const paid=topup.order.paymentStatus==='paid',delivered=topup.order.deliveryStatus==='delivered';$('order-player').textContent=topup.order.player;$('order-pack').textContent=topup.order.coins+' Coin';$('order-code').textContent=topup.order.code;const s1=$('step-1'),s2=$('step-2'),s3=$('step-3');s1.className='active '+(paid?'done':'');s1.querySelector('span').textContent=paid?'✓':'1';s1.querySelector('small').textContent=paid?'Đã nhận thanh toán':'Đang chờ chuyển khoản';s2.className=paid?'active done':'';s2.querySelector('span').textContent=paid?'✓':'2';s2.querySelector('small').textContent=paid?'Đã xác minh giao dịch':'Chưa bắt đầu';s3.className=delivered?'active done':paid?'active':'';s3.querySelector('span').textContent=delivered?'✓':'3';s3.querySelector('small').textContent=delivered?'Coin đã vào game':paid?'Đang gửi coin vào game':'Chưa bắt đầu';$('success-box').classList.toggle('hidden',!delivered);if(delivered&&poller){clearInterval(poller);poller=null}}
+document.querySelectorAll('[data-copy]').forEach(btn=>btn.onclick=async()=>{const id=btn.dataset.copy,v=$(id).textContent;try{await navigator.clipboard.writeText(v);const old=btn.textContent;btn.textContent='Đã copy';setTimeout(()=>btn.textContent=old,1200)}catch{}});
+async function loadFreeStatus(){const name=$('free-player').value.trim();if(!name)return;try{freeStatus=await api('free-status',{params:{player:name}});$('reward-coins').textContent=freeStatus.rewardCoins+' Coin';$('quota-done').textContent=freeStatus.completed;$('quota-limit').textContent=freeStatus.limit;$('quota-title').textContent=freeStatus.remaining+' lượt còn lại';$('quota-text').textContent=`Đã hoàn tất ${freeStatus.completed}/${freeStatus.limit} lượt hôm nay.`;const deg=Math.min(360,(freeStatus.completed/Math.max(1,freeStatus.limit))*360);$('quota-ring').style.background=`conic-gradient(#35c7ff ${deg}deg,rgba(255,255,255,.06) ${deg}deg)`;$('create-free').disabled=!name||freeStatus.remaining<=0}catch{}}
+$('create-free').onclick=async()=>{const btn=$('create-free'),player=$('free-player').value.trim();setError('free-error','');btn.disabled=true;btn.textContent='Đang tạo Link4M...';try{const j=await api('free-create',{method:'POST',body:{player}});sessionStorage.setItem('craftopia_free_player',player);sessionStorage.setItem('craftopia_free_coins',String(j.rewardCoins||freeStatus?.rewardCoins||20));location.assign(j.shortUrl)}catch(e){setError('free-error',e.message);btn.disabled=false;btn.innerHTML='Tạo link nhận Coin <b>↗</b>'}};
+const modal=$('result-modal');function closeModal(){modal.classList.add('hidden')}document.querySelector('.modal-backdrop').onclick=closeModal;document.querySelector('.modal-close').onclick=closeModal;document.querySelector('.modal-action').onclick=closeModal;
+(function handleFreeReturn(){const q=new URLSearchParams(location.search).get('free');if(!q)return;const p=sessionStorage.getItem('craftopia_free_player')||'';const coins=Number(sessionStorage.getItem('craftopia_free_coins')||20);if(p){$('free-player').value=p;$('free-count').textContent=p.length+'/16';loadFreeStatus()}const map={success:[true,'Vượt link thành công!','Phần thưởng đã được xác minh và đưa vào hàng đợi gửi tới Minecraft.'],limit:[false,'Đã hết lượt hôm nay','Ingame này đã nhận đủ số lượt miễn phí trong ngày.'],'ip-limit':[false,'Đã chạm giới hạn mạng','Mạng/IP này đã vượt giới hạn an toàn hôm nay.'],expired:[false,'Link đã hết hạn','Hãy tạo một link mới để nhận phần thưởng.'],identity:[false,'Không khớp thiết bị','Thiết bị hoặc IP không khớp với lúc tạo lượt.'],'too-fast':[false,'Xác minh chưa hợp lệ','Bạn quay lại quá nhanh nên lượt này chưa được chấp nhận.'],disabled:[false,'Tính năng đang tạm tắt','Shortlink provider chưa được kích hoạt.'],invalid:[false,'Link không hợp lệ','Lượt nhận hoặc token không còn hợp lệ.'],error:[false,'Không thể xác minh','Hệ thống gặp lỗi khi xử lý phần thưởng.']};const m=map[q]||map.error;modal.classList.remove('hidden','ok','bad');modal.classList.add(m[0]?'ok':'bad');$('modal-icon').textContent=m[0]?'✓':'!';$('modal-title').textContent=m[1];$('modal-message').textContent=m[2];$('modal-player').textContent=p||'Craftopia Player';$('modal-coins').textContent='+'+coins+' Coin';$('modal-receipt').classList.toggle('hidden',!m[0]);$('modal-small').classList.toggle('hidden',!m[0]);document.querySelector('.modal-action').textContent=m[0]?'Tuyệt, tiếp tục':'Quay lại';history.replaceState({},'',location.pathname+'#free')})();
+</script>
+</body></html>
