@@ -1,0 +1,22 @@
+name: Verify Craftopia Bot
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "bot.py"
+      - "requirements.txt"
+      - ".github/workflows/verify-bot.yml"
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Compile Python
+        run: python -m py_compile bot.py
