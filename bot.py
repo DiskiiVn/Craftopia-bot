@@ -62,6 +62,12 @@ MONITOR_EXCLUDED_CHANNEL_IDS = {
     int(value) for value in os.getenv("MONITOR_EXCLUDED_CHANNEL_IDS", "").split(",")
     if value.strip().isdigit()
 }
+CRAFTOPIA_WALLET_API_BASE = os.getenv(
+    "CRAFTOPIA_WALLET_API_BASE",
+    "https://store.craftopics.online/api/discord",
+).rstrip("/")
+CRAFTOPIA_BOT_API_KEY = os.getenv("CRAFTOPIA_BOT_API_KEY", "").strip()
+
 MC_HOST = os.getenv("MC_HOST", "play.craftopics.online")
 JAVA_PORT = int(os.getenv("JAVA_PORT", "25565"))
 BEDROCK_PORT = int(os.getenv("BEDROCK_PORT", "19132"))
@@ -388,6 +394,43 @@ def server_stats_embed(
     embed.set_footer(text="Tự động cập nhật; Discord online là số tổng hợp, không lưu danh tính")
     return embed
 
+
+async def craftopia_wallet_api(
+    method: str,
+    path: str,
+    *,
+    payload: dict | None = None,
+    params: dict | None = None,
+) -> tuple[int, dict]:
+    """Call Craftopia Wallet API without exposing the bot API key."""
+    if not CRAFTOPIA_BOT_API_KEY:
+        return 503, {"error": "Bot chưa được cấu hình CRAFTOPIA_BOT_API_KEY."}
+
+    url = f"{CRAFTOPIA_WALLET_API_BASE}/{path.lstrip(chr(47))}"
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "x-craftopia-bot-key": CRAFTOPIA_BOT_API_KEY,
+    }
+    timeout = aiohttp.ClientTimeout(total=15)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.request(
+                method.upper(),
+                url,
+                headers=headers,
+                json=payload if payload is not None else None,
+                params=params,
+            ) as response:
+                try:
+                    data = await response.json(content_type=None)
+                except Exception:
+                    text_body = (await response.text())[:500]
+                    data = {"error": text_body or "API trả dữ liệu không hợp lệ."}
+                return response.status, data if isinstance(data, dict) else {"data": data}
+    except (aiohttp.ClientError, TimeoutError, OSError) as exc:
+        logger.warning("Craftopia Wallet API request failed: %s", exc)
+        return 503, {"error": "Không kết nối được Craftopia Wallet API."}
 
 class StaffHelpView(discord.ui.View):
     def __init__(self, requester_id: int) -> None:
@@ -1376,6 +1419,81 @@ async def handle_incident_signal(
     except (discord.Forbidden, discord.NotFound, discord.HTTPException):
         logger.warning("Cannot send incident notice to channel %s", signal.channel_id)
 
+
+@bot.tree.command(name="link", description="Liên kết Discord với tài khoản Craftopia Wallet")
+@app_commands.describe(code="Mã liên kết 8 ký tự tạo trên store.craftopics.online")
+@app_commands.checks.cooldown(4, 60.0, key=lambda interaction: (interaction.guild_id, interaction.user.id))
+async def link_wallet(interaction: discord.Interaction, code: str) -> None:
+    await interaction.response.defer(ephemeral=True, thinking=True)
+
+    normalized = re.sub(r"[^A-Z0-9]", "", code.upper())
+    if len(normalized) != 8:
+        await interaction.followup.send(
+            "❌ Mã liên kết phải có **8 ký tự**. Hãy tạo mã mới trên `store.craftopics.online`.",
+            ephemeral=True,
+        )
+        return
+
+    status, data = await craftopia_wallet_api(
+        "POST",
+        "link",
+        payload={
+            "code": normalized,
+            "discordId": str(interaction.user.id),
+            "discordUsername": interaction.user.name,
+        },
+    )
+
+    if status == 200 and data.get("linked"):
+        await interaction.followup.send(
+            "✅ **Liên kết thành công!**\n"
+            f"Tài khoản Craftopia: **{data.get('username', 'Player')}**\n"
+            f"Số dư hiện tại: **{int(data.get('balance', 0)):,} Coin**\n"
+            "Bạn có thể dùng `/coin` để xem số dư bất cứ lúc nào.",
+            ephemeral=True,
+        )
+        return
+
+    error = str(data.get("error") or "Không thể liên kết tài khoản.")
+    if status == 401:
+        error = "Bot chưa được cấp API key hợp lệ. Staff cần kiểm tra `CRAFTOPIA_BOT_API_KEY`."
+    elif status == 404:
+        error = "Mã liên kết không tồn tại. Hãy tạo **mã mới** trên website rồi thử lại."
+    elif status == 409:
+        error = "Mã này đã được sử dụng. Hãy tạo mã mới."
+    elif status == 410:
+        error = "Mã đã hết hạn. Hãy tạo mã mới (mã chỉ dùng trong khoảng 10 phút)."
+
+    await interaction.followup.send(f"❌ {error}", ephemeral=True)
+
+
+@bot.tree.command(name="coin", description="Xem số dư Coin Craftopia của bạn")
+@app_commands.checks.cooldown(6, 30.0, key=lambda interaction: (interaction.guild_id, interaction.user.id))
+async def wallet_balance(interaction: discord.Interaction) -> None:
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    status, data = await craftopia_wallet_api(
+        "GET",
+        "balance",
+        params={"discordId": str(interaction.user.id)},
+    )
+    if status == 200 and data.get("linked"):
+        await interaction.followup.send(
+            f"💎 **{data.get('username', 'Player')}**\n"
+            f"Số dư: **{int(data.get('balance', 0)):,} Coin**",
+            ephemeral=True,
+        )
+        return
+    if status == 404:
+        await interaction.followup.send(
+            "❌ Discord của bạn chưa liên kết Craftopia Wallet. "
+            "Vào `store.craftopics.online`, tạo mã rồi dùng `/link <mã>`.",
+            ephemeral=True,
+        )
+        return
+    await interaction.followup.send(
+        f"❌ {data.get('error', 'Không thể đọc số dư Coin.')}",
+        ephemeral=True,
+    )
 
 @bot.tree.command(name="ask", description="Hỏi AI hỗ trợ của Craftopia")
 @app_commands.describe(question="Câu hỏi về server Craftopia", image="Ảnh lỗi (không bắt buộc)")
