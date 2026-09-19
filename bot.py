@@ -31,6 +31,7 @@ from message_cleanup import (
 )
 from mc_status import EndpointStatus, MinecraftStatus, concise_status, query_minecraft_status
 from music import CRAFTOPIA_AUTHOR, MUSIC_RECOVERY_BUILD, MusicCog, MusicConfig, MusicManager
+from shop import ShopCog
 
 
 load_dotenv()
@@ -502,6 +503,7 @@ class CraftopiaBot(commands.Bot):
             self.stats_dashboard_target = {"channel_id": STATS_CHANNEL_ID}
 
     async def setup_hook(self) -> None:
+        await self.add_cog(ShopCog(self))
         if self.music.config.enabled:
             await self.add_cog(MusicCog(self, self.music))
             self.add_view(self.music.control_view)
