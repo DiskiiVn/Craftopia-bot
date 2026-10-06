@@ -1,0 +1,12 @@
+/* AXOLOT v0.9.3 — PROFILE CARD RESPONSIVE FIX */
+.axo-brand:after{content:"0.9.3 RC"!important}
+.hero-reef:after{content:"AXOLOT // NEBULA 0.9.3 // LIVE GAME MONITOR"!important}
+.instance-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+.instance-card{min-width:0!important;overflow:hidden!important}
+.instance-actions{display:grid!important;grid-template-columns:minmax(0,1.55fr) minmax(68px,.78fr) 42px 42px!important;gap:7px!important;width:100%!important;min-width:0!important;margin-top:auto!important;align-items:center!important}
+.instance-actions button{min-width:0!important;width:100%!important;height:40px!important;padding:0 8px!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:6px!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+.instance-actions button:nth-child(3),.instance-actions button:nth-child(4){width:42px!important;min-width:42px!important;padding:0!important;font-size:0!important}
+.instance-actions button:nth-child(3) svg,.instance-actions button:nth-child(4) svg{width:16px!important;height:16px!important}
+.instance-actions button:nth-child(3):hover,.instance-actions button:nth-child(4):hover{border-color:rgba(143,248,230,.24)!important;background:rgba(117,242,221,.06)!important;color:#eafff8!important}
+@media(max-width:1240px) and (min-width:901px){.instance-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.instance-actions{grid-template-columns:minmax(0,1.5fr) minmax(64px,.72fr) 42px 42px!important}}
+@media(max-width:900px){.instance-grid{grid-template-columns:1fr!important}.instance-actions{grid-template-columns:minmax(0,1.5fr) minmax(68px,.78fr) 42px 42px!important}}
