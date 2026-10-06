@@ -29,6 +29,9 @@ jobs:
           [IO.File]::WriteAllBytes("axolot-client-build/payload.zip", [Convert]::FromBase64String($b64))
           New-Item -ItemType Directory -Force -Path "axolot-client-build/source" | Out-Null
           Expand-Archive -Path "axolot-client-build/payload.zip" -DestinationPath "axolot-client-build/source" -Force
+          New-Item -ItemType Directory -Force -Path "axolot-client-build/source/src-tauri/icons" | Out-Null
+          $iconB64 = "AAABAAEAICAAAAAAIAAgAQAAFgAAAIlQTkcNChoKAAAADUlIRFIAAAAgAAAAIAgGAAAAc3p69AAAAOdJREFUeJztlj0OwjAMhV3UU2QpR2AvDMzszD0ac/fOHRA7V2DhGjBFQpH/BXKQ4ilSXuMvz2niLm33LwiMTWTyBlAFQO/5aLxfybnb7mBaq7P8BVxiL4i6BJbkFr3ogDUxFpwb4YeQBfjc/TIkWIakWrTUci6SAGVybEwlx8YURJ0lKGlPjyc6xoLTYi6oLyIpsVdbZwmqBJinFeZp/br2fxw4X44AAOLO8nzWuwCkl4yCkOCwdcnHiLq5NLWldm8C4CAoEM52ytX2HKtbMo8TmrZM7YC12dTqTU1pjrCu+BcRfggbwBsp4mMjK3iN0gAAAABJRU5ErkJggg=="
+          [IO.File]::WriteAllBytes("axolot-client-build/source/src-tauri/icons/icon.ico", [Convert]::FromBase64String($iconB64))
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
