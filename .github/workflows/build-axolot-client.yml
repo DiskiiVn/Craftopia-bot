@@ -1,0 +1,55 @@
+name: Build Axolot Client Windows
+
+on:
+  push:
+    branches:
+      - axolot-client-build-temp-20261006
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reconstruct Axolot source
+        shell: pwsh
+        run: |
+          $p0 = Get-Content -Raw "axolot-client-build/payload.part0"
+          $p1 = Get-Content -Raw "axolot-client-build/payload.part1"
+          $p2 = Get-Content -Raw "axolot-client-build/payload.part2"
+          $b64 = $p0 + $p1 + $p2
+          [IO.File]::WriteAllBytes("axolot-client-build/payload.zip", [Convert]::FromBase64String($b64))
+          New-Item -ItemType Directory -Force -Path "axolot-client-build/source" | Out-Null
+          Expand-Archive -Path "axolot-client-build/payload.zip" -DestinationPath "axolot-client-build/source" -Force
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        working-directory: axolot-client-build/source
+        run: npm install
+
+      - name: Build NSIS installer
+        working-directory: axolot-client-build/source
+        run: npm run tauri build -- --bundles nsis
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Axolot-Client-Windows-Installer
+          path: axolot-client-build/source/src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+          retention-days: 7
