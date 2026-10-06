@@ -52,6 +52,13 @@ jobs:
           $main = $main.Replace("AXOLOT NEBULA // SYSTEM READY", "AXOLOT NEBULA 08.1 // SYSTEM READY")
           Set-Content -Encoding UTF8 $mainPath $main
 
+          $rustMainPath = "axolot-v08-build/source/src-tauri/src/main.rs"
+          $rustMain = Get-Content -Raw $rustMainPath
+          if ($rustMain -notmatch "windows_subsystem") {
+            $rustMain = '#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]' + [Environment]::NewLine + $rustMain
+            Set-Content -Encoding UTF8 $rustMainPath $rustMain
+          }
+
           $verify = Get-Content -Raw $mainPath
           if ($verify -notmatch "hero-reef" -or $verify -notmatch "AXOLOT NEBULA 08.1") {
             throw "Nebula UI verification failed"
