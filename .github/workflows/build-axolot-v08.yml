@@ -34,7 +34,6 @@ jobs:
           $src = Get-ChildItem "axolot-v08-build/source-root" -Directory | Select-Object -First 1
           Move-Item $src.FullName "axolot-v08-build/source"
 
-          # Force a side-by-side install so Windows cannot launch the old Quick Launch build.
           $pkgPath = "axolot-v08-build/source/package.json"
           $pkg = Get-Content -Raw $pkgPath | ConvertFrom-Json
           $pkg.version = "0.8.1"
@@ -51,10 +50,8 @@ jobs:
           $mainPath = "axolot-v08-build/source/src/main.tsx"
           $main = Get-Content -Raw $mainPath
           $main = $main.Replace("AXOLOT NEBULA // SYSTEM READY", "AXOLOT NEBULA 08.1 // SYSTEM READY")
-          $main = $main.Replace("<span className=\"axo-brand-copy\"><strong>AXOLOT</strong><small>CLIENT</small></span>", "<span className=\"axo-brand-copy\"><strong>AXOLOT</strong><small>CLIENT · NEBULA 08.1</small></span>")
           Set-Content -Encoding UTF8 $mainPath $main
 
-          # Fail the build if the reconstructed UI is the old Fast-style Quick Launch layout.
           $verify = Get-Content -Raw $mainPath
           if ($verify -notmatch "hero-reef" -or $verify -notmatch "AXOLOT NEBULA 08.1") {
             throw "Nebula UI verification failed"
