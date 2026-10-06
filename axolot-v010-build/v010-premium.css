@@ -1,0 +1,103 @@
+/* =========================================================
+   AXOLOT CLIENT 0.10 — PREMIUM IDENTITY / LUNAR-GRADE POLISH
+   ========================================================= */
+:root{
+  --v10-cyan:#78f6e5;
+  --v10-blue:#79c9ff;
+  --v10-violet:#a991ff;
+  --v10-pink:#ff93c9;
+  --v10-surface:rgba(8,18,24,.76);
+  --v10-surface-2:rgba(12,25,31,.84);
+  --v10-border:rgba(160,255,239,.10);
+  --v10-border-hot:rgba(130,246,226,.28);
+  --v10-text:#ecfffb;
+  --v10-muted:#86a8a2;
+}
+
+html,body,#root{background:#040a0d}
+body{overflow:hidden}
+.axo-app{
+  min-height:100vh;
+  background:
+    radial-gradient(circle at 12% 16%,rgba(39,217,190,.10),transparent 27%),
+    radial-gradient(circle at 88% 14%,rgba(115,100,255,.14),transparent 31%),
+    radial-gradient(circle at 55% 96%,rgba(255,93,164,.09),transparent 29%),
+    linear-gradient(145deg,#051012 0%,#071116 45%,#060a12 100%);
+}
+.axo-app:before{
+  content:"";position:fixed;inset:0;pointer-events:none;opacity:.28;
+  background-image:linear-gradient(rgba(132,255,236,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(132,255,236,.022) 1px,transparent 1px);
+  background-size:42px 42px;mask-image:linear-gradient(to bottom,rgba(0,0,0,.75),transparent 95%);
+}
+.axo-workspace{height:calc(100vh - 92px);overflow:auto;padding:20px 24px 48px;scrollbar-width:thin;scrollbar-color:rgba(117,242,221,.45) transparent}
+.axo-workspace::-webkit-scrollbar{width:7px}.axo-workspace::-webkit-scrollbar-thumb{background:linear-gradient(var(--v10-cyan),var(--v10-violet));border-radius:99px}
+
+.axo-topbar{
+  top:12px;left:14px;right:14px;width:auto;height:68px;margin:0;
+  border:1px solid rgba(153,255,238,.12);border-radius:23px;
+  background:linear-gradient(110deg,rgba(5,16,19,.90),rgba(7,15,23,.86) 62%,rgba(14,12,29,.86));
+  box-shadow:0 18px 70px rgba(0,0,0,.32),inset 0 1px rgba(255,255,255,.035);
+  backdrop-filter:blur(26px) saturate(135%);
+}
+.axo-brand{min-width:245px}.axo-logo{box-shadow:0 0 0 1px rgba(125,247,228,.16),0 12px 34px rgba(64,245,212,.14)}
+.axo-brand-copy strong{letter-spacing:.05em}.axo-brand-copy small{color:#77dccc;letter-spacing:.08em}
+.top-nav{padding:4px;background:rgba(255,255,255,.018);border:1px solid rgba(255,255,255,.045);border-radius:17px;gap:2px}
+.top-nav button{border-radius:13px;min-height:40px;padding:0 14px;transition:transform .18s ease,background .18s ease,color .18s ease}
+.top-nav button:hover{transform:translateY(-1px);background:rgba(120,246,229,.055);color:#dffff9}
+.top-nav button.active{background:linear-gradient(120deg,rgba(122,246,229,.12),rgba(160,145,255,.11));box-shadow:inset 0 0 0 1px rgba(142,246,231,.12),0 7px 22px rgba(0,0,0,.18)}
+.status-chip,.user-chip,.round-icon{border-color:rgba(155,255,238,.09);background:rgba(255,255,255,.025)}
+.status-chip{box-shadow:inset 0 0 20px rgba(75,247,205,.025)}
+.user-chip{min-width:178px}
+
+.panel-glass{
+  border:1px solid var(--v10-border);
+  background:linear-gradient(145deg,rgba(9,23,27,.79),rgba(8,15,23,.75));
+  box-shadow:0 24px 80px rgba(0,0,0,.22),inset 0 1px rgba(255,255,255,.026);
+  backdrop-filter:blur(24px) saturate(130%);
+}
+.hero-reef{border-color:rgba(128,246,226,.14);box-shadow:0 30px 100px rgba(0,0,0,.28),inset 0 1px rgba(255,255,255,.03)}
+.hero-reef:after{content:"AXOLOT // NEBULA 0.10 // PERFORMANCE LAYER"!important;color:rgba(184,255,244,.22)!important}
+.launch-primary{transition:transform .18s ease,box-shadow .18s ease,filter .18s ease}
+.launch-primary:hover:not(:disabled){transform:translateY(-2px);filter:saturate(112%);box-shadow:0 20px 55px rgba(101,235,214,.28)}
+.tool-grid button,.profile-capsule,.instance-card,.project-card-new{transition:transform .2s ease,border-color .2s ease,background .2s ease,box-shadow .2s ease}
+.tool-grid button:hover,.profile-capsule:hover,.instance-card:hover,.project-card-new:hover{transform:translateY(-3px);box-shadow:0 18px 40px rgba(0,0,0,.20)}
+
+/* Premium Account Vault */
+.accounts-page{animation:v10PageIn .36s cubic-bezier(.2,.8,.2,1);padding:8px 6px 36px}
+.accounts-page .page-heading-new{min-height:210px;padding:34px 36px;border:1px solid rgba(132,246,228,.11);border-radius:30px;position:relative;overflow:hidden;background:linear-gradient(135deg,rgba(7,28,29,.72),rgba(8,17,25,.66) 58%,rgba(32,20,58,.62));box-shadow:0 30px 90px rgba(0,0,0,.20)}
+.accounts-page .page-heading-new:before{content:"";position:absolute;width:420px;height:420px;border-radius:50%;right:-100px;top:-160px;background:radial-gradient(circle,rgba(158,139,255,.18),rgba(93,225,211,.055) 48%,transparent 70%);filter:blur(2px)}
+.accounts-page .page-heading-new:after{content:"IDENTITY // VAULT 10";position:absolute;right:30px;bottom:20px;color:rgba(171,255,241,.20);font-size:8px;letter-spacing:.22em}
+.accounts-page .page-heading-new>div:first-child{position:relative;z-index:2}
+.accounts-page .page-heading-new h1{font-size:54px;line-height:.92;margin:12px 0 16px;max-width:720px}
+.account-lead{max-width:720px;color:#9abbb5;line-height:1.6;font-size:14px}
+.account-active-summary{position:relative;z-index:2;min-width:290px;padding:16px 18px;border-radius:20px;display:grid;grid-template-columns:52px 1fr auto;align-items:center;gap:12px;background:linear-gradient(135deg,rgba(117,242,221,.08),rgba(159,141,255,.075));border-color:rgba(132,246,228,.16)}
+.account-active-summary .user-avatar.large{width:52px;height:52px;border-radius:17px;background:linear-gradient(145deg,rgba(117,242,221,.17),rgba(159,141,255,.17));box-shadow:inset 0 0 0 1px rgba(255,255,255,.05)}
+.account-active-summary>span:nth-child(2){display:flex;flex-direction:column;min-width:0}.account-active-summary small{font-size:8px;color:#79cbbb;letter-spacing:.13em}.account-active-summary b{font-size:15px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.active-check{display:inline-flex;align-items:center;gap:5px;color:#7df2c6;font-size:10px;background:rgba(77,231,173,.08);padding:7px 9px;border-radius:10px;border:1px solid rgba(98,240,190,.1)}
+
+.account-layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(330px,.65fr);gap:18px;margin-top:18px;align-items:start}
+.account-library,.account-create{border-radius:28px;padding:24px;min-width:0}
+.account-library-head{display:flex;align-items:end;justify-content:space-between;gap:16px;margin-bottom:20px}.account-library-head h2{font-size:22px;margin:6px 0 0}.account-library-head .search-pill{min-width:260px;max-width:360px;flex:1}
+.account-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.account-card-new{position:relative;min-height:196px;border-radius:21px;border:1px solid rgba(255,255,255,.055);background:linear-gradient(150deg,rgba(255,255,255,.032),rgba(255,255,255,.012));padding:17px;overflow:hidden;transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease}
+.account-card-new:before{content:"";position:absolute;width:150px;height:150px;border-radius:50%;right:-48px;top:-58px;background:radial-gradient(circle,rgba(124,240,224,.10),transparent 68%)}
+.account-card-new:hover{transform:translateY(-3px);border-color:rgba(128,246,226,.18);box-shadow:0 18px 46px rgba(0,0,0,.23)}
+.account-card-new.active{border-color:rgba(120,246,229,.32);background:linear-gradient(145deg,rgba(93,229,207,.10),rgba(117,109,255,.055));box-shadow:inset 0 0 0 1px rgba(117,242,221,.05),0 20px 50px rgba(0,0,0,.20)}
+.account-card-new.active:after{content:"ACTIVE";position:absolute;right:14px;top:14px;font-size:7px;letter-spacing:.13em;color:#7df2c6;padding:5px 7px;border-radius:8px;background:rgba(72,220,167,.09);border:1px solid rgba(101,239,190,.11)}
+.account-card-top{display:flex;align-items:center;justify-content:space-between;position:relative;z-index:1}.account-avatar{width:46px;height:46px;border-radius:15px;display:grid;place-items:center;border:1px solid rgba(255,255,255,.055)}.account-avatar.offline{background:linear-gradient(145deg,rgba(117,242,221,.10),rgba(76,146,158,.06));color:#7df2e1}.account-avatar.microsoft{background:linear-gradient(145deg,rgba(79,141,255,.12),rgba(158,139,255,.09));color:#96b8ff}.account-type{font-size:8px;letter-spacing:.12em;color:#789f99}.account-card-new h3{font-size:19px;margin:18px 0 5px;position:relative;z-index:1}.account-card-new p{font-size:11px;color:#7f9f9a;margin:0 0 18px;position:relative;z-index:1}.account-card-actions{display:grid;grid-template-columns:1fr 42px;gap:8px;position:relative;z-index:1}.account-card-actions button{height:40px;border-radius:12px}.selected-account{border:1px solid rgba(101,238,190,.13);background:rgba(64,211,160,.08);color:#84f3c9;display:flex;align-items:center;justify-content:center;gap:7px}.trash-btn{border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.025);color:#78908d}.trash-btn:hover{color:#ff9bb2;border-color:rgba(255,124,155,.18);background:rgba(255,93,132,.06)}
+
+.account-create{position:sticky;top:2px;background:linear-gradient(150deg,rgba(13,29,33,.88),rgba(16,15,31,.82));border-color:rgba(158,141,255,.12)}
+.account-create-icon{width:60px;height:60px;border-radius:19px;display:grid;place-items:center;margin:18px 0;background:linear-gradient(145deg,rgba(117,242,221,.11),rgba(159,141,255,.12));color:#8cecdc;box-shadow:inset 0 0 0 1px rgba(255,255,255,.04)}
+.account-create h2{font-size:25px;margin:0 0 8px}.account-create>p{font-size:12px;line-height:1.6;color:#86a4a0;margin-bottom:22px}.account-create label{display:flex;flex-direction:column;gap:8px;font-size:10px;color:#99bab4}.account-create input{height:48px;border-radius:14px;border:1px solid rgba(151,255,236,.10);background:rgba(2,10,13,.55);color:#eafffb;padding:0 14px;outline:none}.account-create input:focus{border-color:rgba(117,242,221,.32);box-shadow:0 0 0 3px rgba(117,242,221,.055)}.account-create .creator-submit{width:100%;height:48px;margin-top:12px;border-radius:14px;border:0;color:#061719;background:linear-gradient(115deg,#75f1dc,#83d6eb 55%,#aa92f6);font-weight:800;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;box-shadow:0 14px 35px rgba(84,225,204,.13)}
+.microsoft-connect{margin-top:20px;padding:15px;border-radius:17px;border:1px solid rgba(145,159,255,.10);background:linear-gradient(135deg,rgba(79,119,255,.05),rgba(153,116,255,.05));display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:10px}.microsoft-icon{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;background:rgba(111,133,255,.09);color:#a5b6ff}.microsoft-connect b{font-size:11px}.microsoft-connect p{font-size:9px;line-height:1.45;color:#7f949f;margin:4px 0 0}.microsoft-connect button{height:34px;padding:0 11px;border-radius:10px;border:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.025);color:#657579}
+
+/* Profile card refinement */
+.instance-grid{gap:14px}.instance-card{border-radius:23px!important;overflow:hidden}.instance-card.active,.instance-card.default{border-color:rgba(117,242,221,.25)!important;box-shadow:0 22px 60px rgba(0,0,0,.20),inset 0 0 0 1px rgba(117,242,221,.03)}
+.instance-actions{grid-template-columns:minmax(130px,1.35fr) minmax(82px,.9fr) 44px 44px!important;gap:7px!important}.instance-folder,.instance-more,.instance-icon-action{width:44px!important;min-width:44px!important;padding:0!important}.instance-play,.instance-mods{min-width:0!important}
+
+/* Motion */
+.axo-workspace>section{animation:v10PageIn .34s cubic-bezier(.2,.8,.2,1)}
+@keyframes v10PageIn{from{opacity:0;transform:translateY(9px) scale(.996)}to{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.axo-workspace>section,.tool-grid button,.profile-capsule,.instance-card,.project-card-new,.account-card-new,.launch-primary{animation:none!important;transition:none!important}}
+
+@media(max-width:1180px){.account-layout{grid-template-columns:1fr}.account-create{position:relative}.account-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.accounts-page .page-heading-new{align-items:flex-start}.account-active-summary{min-width:250px}}
+@media(max-width:780px){.account-grid{grid-template-columns:1fr}.account-library-head{align-items:stretch;flex-direction:column}.account-library-head .search-pill{max-width:none;width:100%}.accounts-page .page-heading-new{padding:26px 22px}.accounts-page .page-heading-new h1{font-size:40px}.account-active-summary{width:100%}.instance-actions{grid-template-columns:1fr 1fr 44px 44px!important}}
