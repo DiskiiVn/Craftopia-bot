@@ -1,4 +1,4 @@
-name: Build Axolot Client v0.8 Nebula
+name: Build Axolot Client v0.8.1 Nebula Fix
 
 on:
   push:
@@ -16,7 +16,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Reconstruct Axolot v0.8 source
+      - name: Reconstruct exact Nebula source
         shell: pwsh
         run: |
           $names = @(
@@ -33,6 +33,35 @@ jobs:
           Expand-Archive -Path "axolot-v08-build/payload.zip" -DestinationPath "axolot-v08-build/source-root" -Force
           $src = Get-ChildItem "axolot-v08-build/source-root" -Directory | Select-Object -First 1
           Move-Item $src.FullName "axolot-v08-build/source"
+
+          # Force a side-by-side install so Windows cannot launch the old Quick Launch build.
+          $pkgPath = "axolot-v08-build/source/package.json"
+          $pkg = Get-Content -Raw $pkgPath | ConvertFrom-Json
+          $pkg.version = "0.8.1"
+          $pkg | ConvertTo-Json -Depth 20 | Set-Content -Encoding UTF8 $pkgPath
+
+          $cfgPath = "axolot-v08-build/source/src-tauri/tauri.conf.json"
+          $cfg = Get-Content -Raw $cfgPath | ConvertFrom-Json
+          $cfg.productName = "Axolot Client Nebula"
+          $cfg.version = "0.8.1"
+          $cfg.identifier = "com.axolot.client.nebula081"
+          $cfg.app.windows[0].title = "Axolot Client - Nebula 0.8.1"
+          $cfg | ConvertTo-Json -Depth 30 | Set-Content -Encoding UTF8 $cfgPath
+
+          $mainPath = "axolot-v08-build/source/src/main.tsx"
+          $main = Get-Content -Raw $mainPath
+          $main = $main.Replace("AXOLOT NEBULA // SYSTEM READY", "AXOLOT NEBULA 08.1 // SYSTEM READY")
+          $main = $main.Replace("<span className=\"axo-brand-copy\"><strong>AXOLOT</strong><small>CLIENT</small></span>", "<span className=\"axo-brand-copy\"><strong>AXOLOT</strong><small>CLIENT · NEBULA 08.1</small></span>")
+          Set-Content -Encoding UTF8 $mainPath $main
+
+          # Fail the build if the reconstructed UI is the old Fast-style Quick Launch layout.
+          $verify = Get-Content -Raw $mainPath
+          if ($verify -notmatch "hero-reef" -or $verify -notmatch "AXOLOT NEBULA 08.1") {
+            throw "Nebula UI verification failed"
+          }
+          if ($verify -match "<h1>Quick Launch</h1>") {
+            throw "Old Quick Launch UI detected"
+          }
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -53,7 +82,7 @@ jobs:
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: Axolot-Client-v0.8-Nebula-Windows-Installer
+          name: Axolot-Client-v0.8.1-Nebula-Fix
           path: axolot-v08-build/source/src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error
           retention-days: 7
