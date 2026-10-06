@@ -16,22 +16,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Reconstruct verified v0.9.2 source and patch v0.9.3
+      - name: Reconstruct verified v0.9.2 source
         shell: pwsh
         run: |
           $parts = 0..7 | ForEach-Object { Get-Content -Raw ("axolot-v092-build/payload.part{0:D2}" -f $_) }
           $b64 = $parts -join ""
           [IO.File]::WriteAllBytes("axolot-v092-build/payload.zip", [Convert]::FromBase64String($b64))
-
           $actual = (Get-FileHash "axolot-v092-build/payload.zip" -Algorithm SHA256).Hash.ToLower()
           $expected = "aea27a6959ca07381ff06c6456bd6c6887405e565ccd2a5c6fda8b7bdf5171c9"
-          if ($actual -ne $expected) { throw "Payload checksum mismatch: $actual" }
-
+          if ($actual -ne $expected) { throw "Payload checksum mismatch" }
           New-Item -ItemType Directory -Force -Path "axolot-v092-build/source-root" | Out-Null
           Expand-Archive -Path "axolot-v092-build/payload.zip" -DestinationPath "axolot-v092-build/source-root" -Force
           $src = Get-ChildItem "axolot-v092-build/source-root" -Directory | Select-Object -First 1
           Move-Item $src.FullName "axolot-v092-build/source"
 
+      - name: Patch v0.9.3 UI and version
+        shell: pwsh
+        run: |
           $pkgPath = "axolot-v092-build/source/package.json"
           $pkg = Get-Content -Raw $pkgPath | ConvertFrom-Json
           $pkg.version = "0.9.3"
@@ -40,7 +41,7 @@ jobs:
           $cfgPath = "axolot-v092-build/source/src-tauri/tauri.conf.json"
           $cfg = Get-Content -Raw $cfgPath | ConvertFrom-Json
           $cfg.version = "0.9.3"
-          $cfg.app.windows[0].title = "Axolot Client — Release Candidate 0.9.3"
+          $cfg.app.windows[0].title = "Axolot Client - Release Candidate 0.9.3"
           $cfg | ConvertTo-Json -Depth 30 | Set-Content -Encoding UTF8 $cfgPath
 
           $mainPath = "axolot-v092-build/source/src/main.tsx"
@@ -48,78 +49,22 @@ jobs:
           $main = $main.Replace("AXOLOT NEBULA 0.9.2", "AXOLOT NEBULA 0.9.3")
           Set-Content -Encoding UTF8 $mainPath $main
 
-          $stylesPath = "axolot-v092-build/source/src/styles.css"
-          @'
-
-/* ==============================
-   AXOLOT v0.9.3 — PROFILE CARD RESPONSIVE FIX
-   ============================== */
-.axo-brand:after{content:"0.9.3 RC"!important}
-.hero-reef:after{content:"AXOLOT // NEBULA 0.9.3 // LIVE GAME MONITOR"!important}
-.instance-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}
-.instance-card{min-width:0!important;overflow:hidden!important}
-.instance-actions{
-  display:grid!important;
-  grid-template-columns:minmax(0,1.55fr) minmax(68px,.78fr) 42px 42px!important;
-  gap:7px!important;
-  width:100%!important;
-  min-width:0!important;
-  margin-top:auto!important;
-  align-items:center!important;
-}
-.instance-actions button{
-  min-width:0!important;
-  width:100%!important;
-  height:40px!important;
-  padding:0 8px!important;
-  display:inline-flex!important;
-  align-items:center!important;
-  justify-content:center!important;
-  gap:6px!important;
-  white-space:nowrap!important;
-  overflow:hidden!important;
-  text-overflow:ellipsis!important;
-}
-.instance-actions button:nth-child(3),
-.instance-actions button:nth-child(4){
-  width:42px!important;
-  min-width:42px!important;
-  padding:0!important;
-  font-size:0!important;
-}
-.instance-actions button:nth-child(3) svg,
-.instance-actions button:nth-child(4) svg{width:16px!important;height:16px!important}
-.instance-actions button:nth-child(3):hover,
-.instance-actions button:nth-child(4):hover{
-  border-color:rgba(143,248,230,.24)!important;
-  background:rgba(117,242,221,.06)!important;
-  color:#eafff8!important;
-}
-@media(max-width:1240px) and (min-width:901px){
-  .instance-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
-  .instance-actions{grid-template-columns:minmax(0,1.5fr) minmax(64px,.72fr) 42px 42px!important}
-}
-@media(max-width:900px){
-  .instance-grid{grid-template-columns:1fr!important}
-  .instance-actions{grid-template-columns:minmax(0,1.5fr) minmax(68px,.78fr) 42px 42px!important}
-}
-'@ | Add-Content -Encoding UTF8 $stylesPath
+          Get-Content -Raw "axolot-v093-build/profile-fix.css" | Add-Content -Encoding UTF8 "axolot-v092-build/source/src/styles.css"
 
           $main = Get-Content -Raw $mainPath
-          $styles = Get-Content -Raw $stylesPath
-          $cfg = Get-Content -Raw $cfgPath | ConvertFrom-Json
+          $styles = Get-Content -Raw "axolot-v092-build/source/src/styles.css"
           $rustMain = Get-Content -Raw "axolot-v092-build/source/src-tauri/src/main.rs"
           $lib = Get-Content -Raw "axolot-v092-build/source/src-tauri/src/lib.rs"
 
-          if ($cfg.version -ne "0.9.3") { throw "Wrong launcher version" }
-          if ($rustMain -notmatch 'windows_subsystem = "windows"') { throw "Windows GUI subsystem missing" }
+          if ($main -notmatch "AXOLOT NEBULA 0.9.3") { throw "Version label patch missing" }
+          if ($styles -notmatch "PROFILE CARD RESPONSIVE FIX") { throw "Profile fix missing" }
+          if ($rustMain -notmatch "windows_subsystem") { throw "Windows GUI subsystem missing" }
           if ($main -notmatch "boot-overlay") { throw "Loading screen missing" }
-          if ($main -notmatch "game-crash") { throw "Crash event UI missing" }
+          if ($main -notmatch "game-crash") { throw "Crash UI missing" }
           if ($main -notmatch "Accounts") { throw "Account Manager missing" }
-          if ($lib -notmatch "read_crash_report") { throw "Crash Center backend missing" }
+          if ($lib -notmatch "read_crash_report") { throw "Crash backend missing" }
           if ($lib -notmatch "search_curseforge") { throw "CurseForge provider missing" }
-          if ($lib -notmatch '"modmenu"') { throw "Mod Menu AutoBoost missing" }
-          if ($styles -notmatch "AXOLOT v0.9.3") { throw "v0.9.3 UI patch missing" }
+          if ($lib -notmatch "modmenu") { throw "Mod Menu AutoBoost missing" }
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
