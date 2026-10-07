@@ -1,28 +1,3 @@
-diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=target' /mnt/data/axolot_orig/axolot-v0123-work/README.md /mnt/data/axolot_src/axolot-v0123-work/README.md
---- /mnt/data/axolot_orig/axolot-v0123-work/README.md	2026-10-07 09:34:08.000000000 +0000
-+++ /mnt/data/axolot_src/axolot-v0123-work/README.md	2026-10-07 10:29:10.554218554 +0000
-@@ -51,7 +51,7 @@
- - The launcher does not reuse another launcher's Client ID and does not attempt to bypass Minecraft Services authorization.
- 
- 
--## v0.12.3 Multi Identity Vault
-+## v0.12.4 Multi Identity Vault
- - Unlimited Offline/Crack identities with single-add and bulk-add support.
- - Multiple Microsoft/Premium identities can coexist in the same launcher.
- - Microsoft refresh tokens are stored in the OS credential vault via the Rust keyring backend, never in localStorage.
-@@ -59,3 +59,12 @@
- - Account filters, identity counts, session status badges and one-click active-account switching.
- - Offline and Microsoft accounts may share the same visible Minecraft username without colliding.
- - Minecraft AppID approval handling from v0.12.1 remains in place.
-+
-+
-+## v0.12.4 Fixed Desktop Shell + Hands-free Update
-+- Play is now a fixed desktop dashboard: no full-window page scrolling and no marketing-style hero copy.
-+- Navigation is a compact icon rail on the left; only content-heavy views such as Profiles, Mods, Accounts and Settings scroll inside their own panels.
-+- The launch control is icon-first and no longer displays “Play Minecraft”.
-+- Automatic updates are enabled by default. On startup Axolot checks the signed release channel, downloads the NSIS installer internally, verifies SHA-256, starts the silent installer, then exits the old build.
-+- Background update checks run when the launcher regains focus and every 10 minutes. If Minecraft is currently running, Axolot defers installation instead of interrupting the session.
-+- GitHub Actions builds the Windows NSIS installer and publishes `axolot-update.json` automatically for `axolot-v*` tags.
 diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=target' /mnt/data/axolot_orig/axolot-v0123-work/package.json /mnt/data/axolot_src/axolot-v0123-work/package.json
 --- /mnt/data/axolot_orig/axolot-v0123-work/package.json	2026-10-07 09:33:52.000000000 +0000
 +++ /mnt/data/axolot_src/axolot-v0123-work/package.json	2026-10-07 10:27:19.198127762 +0000
