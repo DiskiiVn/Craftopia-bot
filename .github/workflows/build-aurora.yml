@@ -5,6 +5,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 jobs:
   windows:
     runs-on: windows-latest
@@ -17,6 +18,11 @@ jobs:
         with:
           node-version: 22
       - uses: dtolnay/rust-toolchain@stable
+      - name: Wait for initial build cache
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run watch 37597617025 --repo DiskiiVn/Craftopia-bot --exit-status
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: axolot-aurora/Axolot-Client-v0.13.0-Aurora/src-tauri -> target
