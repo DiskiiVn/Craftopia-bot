@@ -22,18 +22,28 @@ jobs:
         run: |
           Invoke-WebRequest "https://github.com/DiskiiVn/Craftopia-bot/releases/download/axolot-v0.12.4/Axolot-Client-v0.12.4-Source.zip" -OutFile "$env:RUNNER_TEMP\base.zip"
           Expand-Archive "$env:RUNNER_TEMP\base.zip" -DestinationPath "work" -Force
-          Rename-Item "work\Axolot-Client-v0.12.4" "Axolot-Client-v0.15.0"
+          Rename-Item "work\Axolot-Client-v0.12.4" "Axolot-Client-v0.14.0"
 
-          $parts = Get-ChildItem "axolot-build/v0.15.0/nova-chunks/nova-part*.b64" | Sort-Object Name
-          if ($parts.Count -ne 16) { throw "Expected 16 Nova patch chunks, found $($parts.Count)" }
-          $patch64 = ($parts | ForEach-Object { (Get-Content -Raw $_.FullName).Trim() }) -join ""
-          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\Axolot-v0.15.0-Nova.patch", [Convert]::FromBase64String($patch64))
+          # Rebuild the exact 0.14.0 source first. This is the tested release lineage.
+          $parts14 = Get-ChildItem "axolot-build/v0.14.0/patch-chunks/part*.b64" | Sort-Object Name
+          if ($parts14.Count -ne 12) { throw "Expected 12 Axolot 0.14.0 patch chunks, found $($parts14.Count)" }
+          $patch14 = ($parts14 | ForEach-Object { (Get-Content -Raw $_.FullName).Trim() }) -join ""
+          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\Axolot-v0.14.0.patch", [Convert]::FromBase64String($patch14))
+          git apply --check --unsafe-paths --directory="work/Axolot-Client-v0.14.0" "$env:RUNNER_TEMP\Axolot-v0.14.0.patch"
+          git apply --unsafe-paths --directory="work/Axolot-Client-v0.14.0" "$env:RUNNER_TEMP\Axolot-v0.14.0.patch"
 
-          git apply --check --unsafe-paths --directory="work/Axolot-Client-v0.15.0" "$env:RUNNER_TEMP\Axolot-v0.15.0-Nova.patch"
-          git apply --unsafe-paths --directory="work/Axolot-Client-v0.15.0" "$env:RUNNER_TEMP\Axolot-v0.15.0-Nova.patch"
+          Rename-Item "work\Axolot-Client-v0.14.0" "Axolot-Client-v0.15.0"
+
+          # Apply only the Nova delta on top of the known-good 0.14.0 tree.
+          $parts15 = Get-ChildItem "axolot-build/v0.15.0/nova-delta/delta-part*.b64" | Sort-Object Name
+          if ($parts15.Count -ne 9) { throw "Expected 9 Nova delta chunks, found $($parts15.Count)" }
+          $patch15 = ($parts15 | ForEach-Object { (Get-Content -Raw $_.FullName).Trim() }) -join ""
+          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\Axolot-v0.15.0-Nova-delta.patch", [Convert]::FromBase64String($patch15))
+          git apply --check --unsafe-paths --directory="work/Axolot-Client-v0.15.0" "$env:RUNNER_TEMP\Axolot-v0.15.0-Nova-delta.patch"
+          git apply --unsafe-paths --directory="work/Axolot-Client-v0.15.0" "$env:RUNNER_TEMP\Axolot-v0.15.0-Nova-delta.patch"
 
           $pkg = Get-Content -Raw "work\Axolot-Client-v0.15.0\package.json" | ConvertFrom-Json
-          if ($pkg.version -ne "0.15.0") { throw "Nova patch version is $($pkg.version), expected 0.15.0" }
+          if ($pkg.version -ne "0.15.0") { throw "Nova source version is $($pkg.version), expected 0.15.0" }
 
       - name: Prepare Axolot Core from Fast Client source
         shell: pwsh
