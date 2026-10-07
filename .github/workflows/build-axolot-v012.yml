@@ -1,0 +1,136 @@
+name: Build and Publish Axolot v0.12 Motion Core
+
+on:
+  push:
+    branches:
+      - axolot-v012-motion-core-20261007
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reconstruct Axolot v0.11 base source
+        shell: pwsh
+        run: |
+          $parts = 0..7 | ForEach-Object { Get-Content -Raw ("axolot-v011-base/payload.part{0:D2}" -f $_) }
+          $b64 = $parts -join ""
+          [IO.File]::WriteAllBytes("axolot-v011-base/payload.zip", [Convert]::FromBase64String($b64))
+          New-Item -ItemType Directory -Force -Path "axolot-v011-base/source-root" | Out-Null
+          Expand-Archive -Path "axolot-v011-base/payload.zip" -DestinationPath "axolot-v011-base/source-root" -Force
+          $entries = Get-ChildItem "axolot-v011-base/source-root"
+          $dirs = @($entries | Where-Object { $_.PSIsContainer })
+          if ($dirs.Count -eq 1 -and (Test-Path (Join-Path $dirs[0].FullName "package.json"))) {
+            Move-Item $dirs[0].FullName "axolot-v011-base/source"
+          } else {
+            New-Item -ItemType Directory -Force -Path "axolot-v011-base/source" | Out-Null
+            Get-ChildItem "axolot-v011-base/source-root" | Move-Item -Destination "axolot-v011-base/source"
+          }
+
+      - name: Apply cloud admin layer
+        shell: pwsh
+        run: |
+          $patch = @(
+            Get-Content -Raw "axolot-v011-base/apply_cloud.part00"
+            Get-Content -Raw "axolot-v011-base/apply_cloud.part01"
+            Get-Content -Raw "axolot-v011-base/apply_cloud.part02"
+          ) -join ""
+          Set-Content -Path "axolot-v011-base/apply_cloud_admin.py" -Value $patch -Encoding UTF8
+          python "axolot-v011-base/apply_cloud_admin.py"
+
+      - name: Apply Microsoft v0.11.2 fix
+        run: python axolot-v011-base/apply_v0112.py
+
+      - name: Apply v0.12 Motion Core
+        run: python axolot-v011-base/apply_v012.py
+
+      - name: Verify v0.12 source
+        shell: pwsh
+        run: |
+          $pkg = Get-Content -Raw "axolot-v011-base/source/package.json"
+          $cfg = Get-Content -Raw "axolot-v011-base/source/src-tauri/tauri.conf.json"
+          $main = Get-Content -Raw "axolot-v011-base/source/src/main.tsx"
+          $css = Get-Content -Raw "axolot-v011-base/source/src/styles.css"
+          $rust = Get-Content -Raw "axolot-v011-base/source/src-tauri/src/lib.rs"
+          if ($pkg -notmatch '"version"\s*:\s*"0.12.0"') { throw "Wrong package version" }
+          if ($cfg -notmatch 'Release Candidate 0.12') { throw "Wrong window title" }
+          if ($main -notmatch 'Launcher diagnostics') { throw "System Health missing" }
+          if ($main -notmatch 'AXOLOT NEBULA 0.12') { throw "v0.12 UI marker missing" }
+          if ($css -notmatch 'AXOLOT v0.12') { throw "Motion Core CSS missing" }
+          if ($rust -notmatch 'Invalid app registration') { throw "Microsoft diagnostic fix missing" }
+          if ($rust -notmatch 'install_optimization_pack') { throw "AutoBoost missing" }
+          if ($rust -notmatch 'search_curseforge') { throw "CurseForge support missing" }
+          if ($rust -notmatch 'search_modrinth') { throw "Modrinth support missing" }
+          if ($rust -notmatch 'read_crash_report') { throw "Crash Center missing" }
+          if ($rust -notmatch 'read_game_console') { throw "Live Console missing" }
+          if ($rust -notmatch 'install_launcher_update') { throw "Auto updater missing" }
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        working-directory: axolot-v011-base/source
+        run: npm install
+
+      - name: Frontend build
+        working-directory: axolot-v011-base/source
+        run: npm run build
+
+      - name: Rust compile check
+        working-directory: axolot-v011-base/source/src-tauri
+        run: cargo check
+
+      - name: Build NSIS installer
+        working-directory: axolot-v011-base/source
+        run: npm run tauri build -- --bundles nsis
+
+      - name: Prepare release
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem "axolot-v011-base/source/src-tauri/target/release/bundle/nsis/*.exe" | Select-Object -First 1
+          if (-not $exe) { throw "Installer not found" }
+          Copy-Item $exe.FullName "Axolot-Client-Setup-0.12.0-RC.exe"
+          $sha = (Get-FileHash "Axolot-Client-Setup-0.12.0-RC.exe" -Algorithm SHA256).Hash.ToLower()
+          $manifest = @{
+            version = "0.12.0"
+            download_url = "https://github.com/DiskiiVn/Craftopia-bot/releases/download/axolot-v0.12.0/Axolot-Client-Setup-0.12.0-RC.exe"
+            sha256 = $sha
+            notes = "Motion Core release: premium animations, System Health diagnostics, Microsoft sign-in diagnostics, AutoBoost, real Modrinth/CurseForge catalogs, Live Console, Crash Center and in-app auto update."
+            mandatory = $false
+          } | ConvertTo-Json -Depth 4
+          Set-Content -Path "axolot-update.json" -Value $manifest -Encoding UTF8
+          Compress-Archive -Path "axolot-v011-base/source/*" -DestinationPath "Axolot-Client-v0.12.0-Source.zip" -Force
+          Write-Host "SHA256=$sha"
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "axolot-v0.12.0" --repo "${{ github.repository }}" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release delete "axolot-v0.12.0" --repo "${{ github.repository }}" --yes --cleanup-tag
+          }
+          gh release create "axolot-v0.12.0" "Axolot-Client-Setup-0.12.0-RC.exe" "Axolot-Client-v0.12.0-Source.zip" "axolot-update.json" --repo "${{ github.repository }}" --title "Axolot Client v0.12 Motion Core RC" --notes "Premium Motion Core update. Adds animated boot radar/particles, responsive page motion, portal and card motion, System Health checks, Microsoft error diagnostics, plus the existing game engine, AutoBoost, Modrinth/CurseForge, console, crash center and updater."
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Axolot-Client-v0.12-Motion-Core
+          path: |
+            Axolot-Client-Setup-0.12.0-RC.exe
+            Axolot-Client-v0.12.0-Source.zip
+            axolot-update.json
+          if-no-files-found: error
+          retention-days: 7
