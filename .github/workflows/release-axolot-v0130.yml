@@ -1,0 +1,110 @@
+name: Release Axolot Client 0.13.0
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'axolot-build/v0.13.0/**'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download launcher base
+        shell: pwsh
+        run: |
+          Invoke-WebRequest "https://github.com/DiskiiVn/Craftopia-bot/releases/download/axolot-v0.12.4/Axolot-Client-v0.12.4-Source.zip" -OutFile "$env:RUNNER_TEMP\base.zip"
+          Expand-Archive "$env:RUNNER_TEMP\base.zip" -DestinationPath "work" -Force
+          Rename-Item "work\Axolot-Client-v0.12.4" "Axolot-Client-v0.13.0"
+          git apply --unsafe-paths --directory="work/Axolot-Client-v0.13.0" "axolot-build/v0.13.0/Axolot-v0.13.0-Launcher.patch"
+
+      - name: Prepare Axolot Core from Fast Client source
+        shell: pwsh
+        run: |
+          git clone https://github.com/justdreno/Fast-Client.git "work/Axolot-Client-v0.13.0/axolot-core"
+          git -C "work/Axolot-Client-v0.13.0/axolot-core" checkout dea60753ab79cdbced608246ccf324e2b0334a4c
+          python "work/Axolot-Client-v0.13.0/scripts/prepare_axolot_core.py" "work/Axolot-Client-v0.13.0/axolot-core"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Build Axolot Core
+        shell: pwsh
+        working-directory: work/Axolot-Client-v0.13.0/axolot-core
+        run: |
+          .\gradlew.bat build
+          $jar = Get-ChildItem "build\libs\axolot-core-0.13.0*.jar" | Where-Object { $_.Name -notmatch 'sources' } | Select-Object -First 1
+          if (-not $jar) { throw "Axolot Core release jar not found" }
+          Copy-Item $jar.FullName "..\src-tauri\resources\axolot-client-core.jar" -Force
+          Copy-Item $jar.FullName "$env:GITHUB_WORKSPACE\Axolot-Core-0.13.0.jar" -Force
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install launcher dependencies
+        working-directory: work/Axolot-Client-v0.13.0
+        run: npm install --no-audit --no-fund
+
+      - name: Verify frontend
+        working-directory: work/Axolot-Client-v0.13.0
+        run: npm run build
+
+      - name: Verify Rust backend
+        working-directory: work/Axolot-Client-v0.13.0/src-tauri
+        run: cargo check
+
+      - name: Build Windows installer
+        working-directory: work/Axolot-Client-v0.13.0
+        run: npm run tauri build -- --bundles nsis
+
+      - name: Prepare release assets
+        id: release
+        shell: pwsh
+        run: |
+          $work = "work\Axolot-Client-v0.13.0"
+          $version = (Get-Content -Raw "$work\package.json" | ConvertFrom-Json).version
+          if ($version -ne "0.13.0") { throw "Unexpected version $version" }
+          $source = Get-ChildItem "$work\src-tauri\target\release\bundle\nsis\*.exe" | Select-Object -First 1
+          if (-not $source) { throw "NSIS installer not found" }
+          $installer = "Axolot-Client-Setup-$version.exe"
+          Copy-Item $source.FullName $installer
+          Compress-Archive -Path "$work\*" -DestinationPath "Axolot-Client-v$version-Source.zip" -Force
+          $sha = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLower()
+          $download = "https://rlbgvgosxrhqnppbrtey.supabase.co/storage/v1/object/public/axolot-releases/stable/$installer"
+          @{
+            version = $version
+            download_url = $download
+            sha256 = $sha
+            notes = "Axolot 0.13.0: unified Fast-inspired desktop layout, Mods dashboard, Axolot Core dashboard, responsive page geometry and bundled Axolot Core 0.13.0 for Fabric 1.21.4."
+            mandatory = $false
+          } | ConvertTo-Json | Set-Content -Encoding UTF8 axolot-update.json
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=axolot-v$version" >> $env:GITHUB_OUTPUT
+          "installer=$installer" >> $env:GITHUB_OUTPUT
+
+      - name: Publish GitHub staging release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          target_commitish: main
+          name: Axolot Client ${{ steps.release.outputs.version }} RC
+          body: |
+            Axolot Client 0.13.0: unified desktop launcher + Axolot Core.
+            Axolot Core is built from the Fast Client source with original-source attribution retained.
+          make_latest: true
+          files: |
+            ${{ steps.release.outputs.installer }}
+            Axolot-Core-0.13.0.jar
+            axolot-update.json
+            Axolot-Client-v${{ steps.release.outputs.version }}-Source.zip
