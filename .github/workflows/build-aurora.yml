@@ -1,0 +1,35 @@
+name: Build Axolot Aurora 0.13.0
+on:
+  push:
+    branches: [axolot-v013-aurora-20261007]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unpack source
+        shell: pwsh
+        run: Expand-Archive -Path axolot-aurora/source.zip -DestinationPath axolot-aurora
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: axolot-aurora/Axolot-Client-v0.13.0-Aurora/src-tauri -> target
+      - name: Frontend and NSIS installer
+        working-directory: axolot-aurora/Axolot-Client-v0.13.0-Aurora
+        shell: pwsh
+        run: ./build-windows.ps1
+      - name: Save EXE and SRC
+        uses: actions/upload-artifact@v4
+        with:
+          name: Axolot-Client-0.13.0-Aurora
+          path: |
+            axolot-aurora/Axolot-Client-v0.13.0-Aurora/release/*.exe
+            axolot-aurora/source.zip
+          if-no-files-found: error
+          retention-days: 14
