@@ -1,0 +1,437 @@
+diff --git a/RELEASE-0.15.1.md b/RELEASE-0.15.1.md
+new file mode 100644
+--- /dev/null
++++ b/RELEASE-0.15.1.md
+@@ -0,0 +1,10 @@
++# Axolot Client 0.15.1 — Nova UI Rebuild Preview
++
++- Rebuilt Home into a responsive desktop launcher dashboard.
++- Removed the fixed 1500px workspace ceiling.
++- Window can resize and maximize normally.
++- Sidebar expands as an overlay and never pushes page content.
++- Standardized readable typography and panel spacing across Library, Mods, Servers, Performance, Accounts, Core, Activity and Settings.
++- Preserves the 0.15.0 launcher backend and Axolot Core feature set.
++
++This is a UI preview build. Keep 0.15.0 as the stable auto-update channel until the layout is approved.
+diff --git a/package.json b/package.json
+--- a/package.json
++++ b/package.json
+@@ -1,7 +1,7 @@
+ {
+   "name": "axolot-client",
+   "private": true,
+-  "version": "0.15.0",
++  "version": "0.15.1",
+   "type": "module",
+   "scripts": {
+     "dev": "vite",
+diff --git a/src/main.tsx b/src/main.tsx
+--- a/src/main.tsx
++++ b/src/main.tsx
+@@ -57,6 +57,7 @@
+   FolderSync,
+ } from 'lucide-react';
+ import './styles.css';
++import './nova151.css';
+ 
+ type Page = 'play' | 'profiles' | 'partners' | 'servers' | 'performance' | 'store' | 'accounts' | 'downloads' | 'settings';
+ type Loader = 'Fabric' | 'Vanilla' | 'Forge' | 'NeoForge';
+@@ -1513,7 +1514,7 @@
+       <header className="axo-topbar">
+         <button className="axo-brand" onClick={() => setPage('play')}>
+           <span className="axo-logo"><i /><b>A</b></span>
+-          <span className="axo-brand-copy"><strong>AXOLOT CLIENT</strong><small>NOVA 0.15</small></span>
++          <span className="axo-brand-copy"><strong>AXOLOT CLIENT</strong><small>NOVA 0.15.1</small></span>
+         </button>
+ 
+         <nav className="top-nav">
+@@ -1542,90 +1543,132 @@
+ 
+       <main className="axo-workspace">
+         {page === 'play' && activeProfile && (
+-          <section className="orbit-home">
+-            <div className="orbit-feature-card panel-glass">
+-              <div className="orbit-cover">
+-                <div className="orbit-cover-sky"/>
+-                <div className="orbit-cover-moon"/>
+-                <div className="orbit-cover-mountain m1"/>
+-                <div className="orbit-cover-mountain m2"/>
+-                <div className="orbit-cover-ground"/>
+-                <div className="orbit-cover-grid"/>
+-                <div className="orbit-cover-brand">
+-                  <span className="orbit-brand-mark">A</span>
+-                  <div><b>AXOLOT</b><small>NEBULA CLIENT</small></div>
++          <section className="nova151-home">
++            <div className="nova151-main">
++              <article className="nova151-hero">
++                <div className="nova151-hero-copy">
++                  <div className="nova151-kicker">
++                    <span className={`nova151-live ${gameStatus?.state === 'running' ? 'running' : ''}`}><i/>{gameStatus?.state === 'running' ? 'Minecraft running' : 'Ready to launch'}</span>
++                    <span className="nova151-build">NOVA 0.15.1 PREVIEW</span>
++                  </div>
++
++                  <div className="nova151-profile-title">
++                    <span className="nova151-profile-icon"><Gamepad2 size={24}/></span>
++                    <div>
++                      <small>ACTIVE PROFILE</small>
++                      <h1>{activeProfile.name}</h1>
++                    </div>
++                  </div>
++
++                  <div className="nova151-specs">
++                    <span><b>{activeProfile.versionId}</b><small>Minecraft</small></span>
++                    <span><b>{activeProfile.loader}</b><small>Loader</small></span>
++                    <span><b>{activeProfile.ram} GB</b><small>Memory</small></span>
++                    <span><b>{localMods.length}</b><small>Mods</small></span>
++                  </div>
++
++                  <div className="nova151-launch-row">
++                    <button className="nova151-launch" disabled={launching || gameStatus?.state === 'running'} onClick={() => launchProfile(activeProfile)}>
++                      <span className="nova151-launch-icon">{gameStatus?.state === 'running' ? <Activity size={24}/> : <Play size={25} fill="currentColor"/>}</span>
++                      <span><b>{gameStatus?.state === 'running' ? 'GAME RUNNING' : 'PLAY MINECRAFT'}</b><small>{activeAccount?.username || launcherName || 'Player'} · {activeProfile.loader} {activeProfile.versionId}</small></span>
++                      <ChevronRight size={19}/>
++                    </button>
++                    <button className="nova151-square" onClick={() => openModLibrary(activeProfile,'installed')} title="Manage mods"><Package size={20}/></button>
++                    <button className="nova151-square" onClick={() => openProfileFolder(activeProfile)} title="Open profile folder"><FolderOpen size={20}/></button>
++                    <button className="nova151-square" onClick={() => { setPage('performance'); void runProfileDoctor(); }} title="Run profile doctor"><Wrench size={20}/></button>
++                  </div>
+                 </div>
+-                <div className="orbit-cover-status"><i/>{gameStatus?.state === 'running' ? 'RUNNING' : 'READY'}</div>
+-                <div className="nova-cover-metrics">
+-                  <span><Gauge size={14}/><b>{doctorResult?.score ?? '—'}</b><small>Health</small></span>
+-                  <span><Cpu size={14}/><b>{hardwareCores}</b><small>Threads</small></span>
+-                  <span><MemoryStick size={14}/><b>{activeProfile.ram}G</b><small>RAM</small></span>
+-                  <span><DatabaseBackup size={14}/><b>{snapshots.length}</b><small>Snapshots</small></span>
++
++                <div className="nova151-hero-visual" aria-hidden="true">
++                  <span className="nova151-ring r1"/><span className="nova151-ring r2"/><span className="nova151-ring r3"/>
++                  <div className="nova151-axolotl">
++                    <span className="gill gl1"/><span className="gill gl2"/><span className="gill gl3"/>
++                    <span className="gill gr1"/><span className="gill gr2"/><span className="gill gr3"/>
++                    <div className="face"><i/><i/><b/></div>
++                    <div className="body"/>
++                  </div>
++                  <span className="nova151-float health"><ShieldCheck size={13}/>{doctorResult?.score ?? '—'} health</span>
++                  <span className="nova151-float boost"><Zap size={13}/>{activeProfile.autoOptimized ? 'SmartBoost on' : 'Boost available'}</span>
++                  <span className="nova151-float core"><Sparkles size={13}/>{coreStatus?.installed ? 'Core ready' : 'Core optional'}</span>
+                 </div>
+-              </div>
+ 
+-              <div className="orbit-feature-meta">
+-                <div className="orbit-feature-icon"><Gamepad2 size={24}/></div>
+-                <div className="orbit-feature-copy">
+-                  <span className="micro-label">ACTIVE PROFILE</span>
+-                  <h1>{activeProfile.name}</h1>
+-                  <p>{activeProfile.versionId} · {activeProfile.loader} · {activeProfile.ram} GB · {activeProfile.modpack || 'Custom profile'}</p>
++                <div className="nova151-quickbar">
++                  <button onClick={() => setPage('profiles')}><Boxes size={18}/><span><b>Library</b><small>{profiles.length} profiles</small></span><ChevronRight size={15}/></button>
++                  <button onClick={() => setPage('partners')}><Package size={18}/><span><b>Mods & Packs</b><small>{localMods.length} installed</small></span><ChevronRight size={15}/></button>
++                  <button onClick={() => setPage('servers')}><ServerIcon size={18}/><span><b>Servers</b><small>{favoriteServers.length} favorites</small></span><ChevronRight size={15}/></button>
++                  <button onClick={() => setPage('performance')}><Gauge size={18}/><span><b>Performance</b><small>Doctor & Boost</small></span><ChevronRight size={15}/></button>
+                 </div>
+-                <button className="orbit-icon-btn" onClick={() => openProfileFolder(activeProfile)} title="Open profile folder"><FolderOpen size={19}/></button>
+-                <button className="orbit-icon-btn" onClick={() => openModLibrary(activeProfile,'installed')} title="Manage mods"><Package size={19}/></button>
+-              </div>
++              </article>
+ 
+-              <div className="orbit-feature-strip">
+-                <button onClick={() => setPage('profiles')}><Boxes size={17}/><span><small>Profiles</small><b>{profiles.length}</b></span></button>
+-                <button onClick={() => openModLibrary(activeProfile,'browse-mods')}><Search size={17}/><span><small>Discover</small><b>Mods</b></span></button>
+-                <button onClick={() => setPage('store')}><Sparkles size={17}/><span><small>Axolot Core</small><b>{coreStatus?.installed ? 'Ready' : 'Install'}</b></span></button>
+-                <button onClick={showGameConsole}><Terminal size={17}/><span><small>Console</small><b>{gameStatus?.state === 'running' ? 'Live' : 'Idle'}</b></span></button>
+-              </div>
+-            </div>
++              <div className="nova151-bottom-grid">
++                <article className="nova151-card nova151-recent">
++                  <div className="nova151-card-head"><span><History size={17}/>Recent profiles</span><button onClick={() => setPage('profiles')}>View library <ChevronRight size={14}/></button></div>
++                  <div className="nova151-profile-cards">
++                    {profiles.slice(0,3).map((profile) => (
++                      <button key={profile.id} className={profile.id === activeProfileId ? 'active' : ''} onClick={() => setActiveProfileId(profile.id)}>
++                        <span className="thumb"><Gamepad2 size={20}/></span>
++                        <span className="copy"><b>{profile.name}</b><small>{profile.versionId} · {profile.loader}</small></span>
++                        {profile.autoOptimized && <em><Zap size={11}/>BOOST</em>}
++                        <Play size={16} fill="currentColor"/>
++                      </button>
++                    ))}
++                  </div>
++                </article>
+ 
+-            <aside className="orbit-launch-panel panel-glass">
+-              <div className="orbit-panel-head">
+-                <div><span className="micro-label">PLAY</span><h2>Launch options</h2></div>
+-                <button className="orbit-icon-btn" onClick={() => setPage('settings')} title="Launcher settings"><Settings size={18}/></button>
++                <article className="nova151-card nova151-servers">
++                  <div className="nova151-card-head"><span><ServerIcon size={17}/>Server Deck</span><button onClick={() => setPage('servers')}>Manage <ChevronRight size={14}/></button></div>
++                  <div className="nova151-server-list">
++                    {favoriteServers.slice(0,3).map((server) => { const ping = serverPings[server.id]; return (
++                      <button key={server.id} onClick={() => quickJoinServer(server)}>
++                        <span className={`dot ${ping?.online ? 'online' : ''}`}/>
++                        <span><b>{server.name}</b><small>{server.address}</small></span>
++                        <em>{ping?.online ? `${ping.players_online}/${ping.players_max}` : '—'}</em>
++                        <strong>{ping?.online ? `${ping.latency_ms} ms` : 'Ping'}</strong>
++                      </button>
++                    ); })}
++                    {!favoriteServers.length && <button className="empty" onClick={() => setPage('servers')}><Plus size={18}/><span><b>Add your first server</b><small>Ping, status and Quick Join</small></span><ChevronRight size={15}/></button>}
++                  </div>
++                </article>
+               </div>
++            </div>
+ 
+-              <div className="orbit-active-row">
+-                <span className="orbit-profile-dot"><Gamepad2 size={18}/></span>
+-                <div><b>{activeProfile.name}</b><small>{activeProfile.versionId} · {activeProfile.loader}</small></div>
+-                <CheckCircle2 size={18}/>
+-              </div>
++            <aside className="nova151-side">
++              <button className="nova151-user-card" onClick={() => setPage('accounts')}>
++                <span className="avatar"><User size={20}/></span>
++                <span><small>PLAYING AS</small><b>{activeAccount?.username || launcherName || 'Player'}</b><em>{activeAccount?.kind === 'microsoft' ? 'Microsoft account' : 'Offline account'}</em></span>
++                <ChevronRight size={17}/>
++              </button>
+ 
+-              <div className="orbit-version-list">
+-                <div className="orbit-list-label"><span>Profiles</span><small>Choose what to launch</small></div>
+-                {profiles.slice(0,5).map((profile) => (
+-                  <button key={profile.id} className={`orbit-version-row ${profile.id === activeProfileId ? 'active' : ''}`} onClick={() => setActiveProfileId(profile.id)}>
+-                    <span className="orbit-version-icon"><Gamepad2 size={17}/></span>
+-                    <span><b>{profile.name}</b><small>{profile.versionId} · {profile.loader}</small></span>
+-                    {profile.autoOptimized && <em>BOOST</em>}
+-                    {profile.id === activeProfileId ? <CheckCircle2 size={17}/> : <ChevronRight size={16}/>}
+-                  </button>
+-                ))}
+-              </div>
++              <article className="nova151-side-card boost-card">
++                <div className="nova151-side-title"><span><Zap size={17}/>SmartBoost</span><em className={activeProfile.autoOptimized ? 'on' : ''}>{activeProfile.autoOptimized ? 'ON' : 'READY'}</em></div>
++                <strong>{activeProfile.autoOptimized ? 'Performance stack active' : 'Optimize this profile'}</strong>
++                <p>Hardware-aware tuning for smoother frame pacing and lower memory pressure.</p>
++                <button onClick={() => void ensureProfileOptimization(activeProfile)}>{activeProfile.autoOptimized ? 'Re-optimize' : 'Enable SmartBoost'}<ChevronRight size={14}/></button>
++              </article>
+ 
+-              <div className="orbit-switches">
+-                <button onClick={() => void ensureProfileOptimization(activeProfile)} className={activeProfile.autoOptimized ? 'enabled' : ''}>
+-                  <span><Zap size={17}/><div><b>AutoBoost</b><small>Performance stack</small></div></span><i/>
+-                </button>
+-                <button onClick={() => setPage('store')} className={coreStatus?.installed ? 'enabled' : ''}>
+-                  <span><ShieldCheck size={17}/><div><b>Axolot Core</b><small>In-game client</small></div></span><i/>
+-                </button>
+-              </div>
++              <article className="nova151-side-card core-card">
++                <div className="nova151-side-title"><span><Sparkles size={17}/>Axolot Core</span><em className={coreStatus?.installed ? 'on' : ''}>{coreStatus?.installed ? 'READY' : 'OPTIONAL'}</em></div>
++                <div className="nova151-core-line"><span className="core-mark">A</span><span><b>HUD · Render · PvP · Utility</b><small>In-game module suite</small></span></div>
++                <button onClick={() => setPage('store')}>{coreStatus?.installed ? 'Open Core' : 'Install Core'}<ChevronRight size={14}/></button>
++              </article>
+ 
+-              <div className="orbit-account-row" onClick={() => setPage('accounts')}>
+-                <span className="user-avatar"><User size={16}/></span>
+-                <span><small>PLAYING AS</small><b>{activeAccount?.username || launcherName || 'Player'}</b></span>
+-                <ChevronRight size={16}/>
+-              </div>
++              <article className="nova151-side-card system-card">
++                <div className="nova151-side-title"><span><Cpu size={17}/>System</span><em>LIVE</em></div>
++                <div className="nova151-system-grid">
++                  <span><b>{hardwareCores}</b><small>CPU threads</small></span>
++                  <span><b>~{deviceMemory}G</b><small>System RAM</small></span>
++                  <span><b>{activeProfile.ram}G</b><small>Game RAM</small></span>
++                  <span><b>{doctorResult?.score ?? '—'}</b><small>Health</small></span>
++                </div>
++              </article>
+ 
+-              <button className="orbit-launch-btn" disabled={launching || gameStatus?.state === 'running'} onClick={() => launchProfile(activeProfile)}>
+-                {gameStatus?.state === 'running' ? <Activity size={20}/> : <Play size={20} fill="currentColor"/>}
+-                <span>{gameStatus?.state === 'running' ? 'RUNNING' : 'LAUNCH'}</span>
+-              </button>
++              <article className="nova151-side-card activity-card">
++                <div className="nova151-side-title"><span><Clock3 size={17}/>Recent activity</span><button onClick={() => setPage('downloads')}>All</button></div>
++                <div className="nova151-activity-list">
++                  {activityItems.slice(0,4).map(item => <div key={item.id} className={item.state}><i/><span><b>{item.title}</b><small>{item.detail}</small></span></div>)}
++                  {!activityItems.length && <div className="empty"><CheckCircle2 size={16}/><span><b>Everything looks good</b><small>No pending launcher tasks</small></span></div>}
++                </div>
++              </article>
+             </aside>
+           </section>
+         )}
+@@ -1833,7 +1876,7 @@
+               <article className="nova-panel activity-feed"><div className="nova-panel-title"><span><Clock3 size={16}/>Recent activity</span><b>{activityItems.length}</b></div><div className="activity-list">{activityItems.map(item=><div className={item.state} key={item.id}><i/><span><b>{item.title}</b><small>{item.detail}</small></span><time>{new Date(item.time).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</time></div>)}{!activityItems.length&&<div className="nova-empty"><Download size={23}/><span><b>No recent operations</b><small>Installs, snapshots, SmartBoost and Quick Join actions appear here.</small></span></div>}</div></article>
+               <aside className="activity-side">
+                 <article className="nova-panel"><div className="nova-panel-title"><span><FolderSync size={16}/>Current engine</span></div><div className="engine-progress"><b>{status}</b><small>{launchStage.toUpperCase()} · {progress}%</small><div><span style={{width:`${progress}%`}}/></div></div></article>
+-                <article className="nova-panel"><div className="nova-panel-title"><span><Download size={16}/>Update channel</span><span className="nova-ready">STABLE</span></div><div className="update-mini"><b>{updateStatus?.available?`v${updateStatus.latest_version} ready`:'Up to date'}</b><small>{updateStatus?.notes || `Installed Axolot ${remoteConfig?.latest_launcher_version || '0.15.0'}`}</small><button onClick={checkForUpdates}><RefreshCw size={13}/>Check updates</button></div></article>
++                <article className="nova-panel"><div className="nova-panel-title"><span><Download size={16}/>Update channel</span><span className="nova-ready">STABLE</span></div><div className="update-mini"><b>{updateStatus?.available?`v${updateStatus.latest_version} ready`:'Up to date'}</b><small>{updateStatus?.notes || `Installed Axolot ${remoteConfig?.latest_launcher_version || '0.15.1'}`}</small><button onClick={checkForUpdates}><RefreshCw size={13}/>Check updates</button></div></article>
+               </aside>
+             </div>
+           </section>
+@@ -2029,7 +2072,7 @@
+           <div className="boot-radar" aria-hidden="true"><span/><b/><i/></div>
+           <div className="boot-core">
+             <div className="boot-axo"><span>A</span><i/><b/></div>
+-            <span className="micro-label">AXOLOT NOVA 0.15.0</span>
++            <span className="micro-label">AXOLOT NOVA 0.15.1</span>
+             <h2>Igniting Nova...</h2>
+             <p>{bootMessage}</p>
+             <div className="boot-line"><span style={{width:`${bootPercent}%`}}/></div>
+diff --git a/src/nova151.css b/src/nova151.css
+new file mode 100644
+--- /dev/null
++++ b/src/nova151.css
+@@ -0,0 +1,103 @@
++/* =========================================================
++   AXOLOT CLIENT 0.15.1 — NOVA UI REBUILD
++   Responsive desktop shell. No fixed canvas, no page-wide scroll.
++   ========================================================= */
++:root{
++  --n151-bg:#07101a;
++  --n151-bg-2:#0a1420;
++  --n151-panel:#0d1824;
++  --n151-panel-2:#111e2c;
++  --n151-panel-3:#152433;
++  --n151-line:rgba(151,214,226,.105);
++  --n151-line-strong:rgba(102,229,218,.24);
++  --n151-text:#edf7f8;
++  --n151-muted:#8198a4;
++  --n151-cyan:#61e6da;
++  --n151-blue:#6f8cff;
++  --n151-violet:#9e7df6;
++  --n151-green:#62e3ab;
++  --n151-warn:#ffc36e;
++  --n151-radius:18px;
++  --n151-top:72px;
++  --n151-nav:72px;
++}
++
++html,body,#root{width:100%!important;height:100%!important;min-width:0!important;min-height:0!important;margin:0!important;overflow:hidden!important;background:var(--n151-bg)!important}
++body{font-size:14px!important;color:var(--n151-text)!important}
++.axo-app{width:100vw!important;height:100vh!important;min-width:0!important;min-height:0!important;max-width:none!important;max-height:none!important;overflow:hidden!important;background:
++  radial-gradient(circle at 8% 18%,rgba(48,208,194,.08),transparent 24%),
++  radial-gradient(circle at 86% 10%,rgba(101,124,255,.11),transparent 30%),
++  linear-gradient(155deg,#07101a 0%,#08121d 46%,#060d15 100%)!important}
++.biolume-field{opacity:.42!important}.motion-field{display:none!important}
++
++/* Top chrome */
++.axo-topbar{position:fixed!important;inset:0 0 auto 0!important;width:100%!important;height:var(--n151-top)!important;margin:0!important;padding:0 18px 0 24px!important;display:flex!important;align-items:center!important;justify-content:space-between!important;gap:18px!important;background:rgba(5,13,22,.94)!important;border:0!important;border-bottom:1px solid var(--n151-line)!important;border-radius:0!important;backdrop-filter:blur(22px)!important;z-index:220!important;box-shadow:0 12px 35px rgba(0,0,0,.18)!important}
++.axo-brand{min-width:210px!important;gap:12px!important}.axo-logo{width:42px!important;height:42px!important;border-radius:14px!important;background:linear-gradient(145deg,var(--n151-cyan),#6dcdf0 55%,var(--n151-violet))!important;box-shadow:0 9px 26px rgba(73,218,208,.16)!important}.axo-brand-copy strong{font-size:14px!important;letter-spacing:.06em!important}.axo-brand-copy small{font-size:8px!important;letter-spacing:.19em!important;color:#69d5ca!important}
++.top-actions{margin-left:auto!important;gap:9px!important}.status-chip{height:40px!important;border-radius:12px!important;padding:0 13px!important;font-size:11px!important;background:#0c1722!important;border:1px solid var(--n151-line)!important;color:#b7c9d0!important}.user-chip{height:44px!important;min-width:190px!important;border-radius:13px!important;background:#0c1722!important;border:1px solid var(--n151-line)!important}.user-chip b{font-size:11px!important}.user-chip small{font-size:9px!important;color:var(--n151-muted)!important}.user-avatar{background:rgba(97,230,218,.08)!important;color:var(--n151-cyan)!important}.round-icon{display:none!important}.nova-command-trigger{height:40px!important;min-width:138px!important;border-radius:12px!important;background:#0c1722!important;border:1px solid var(--n151-line)!important;color:#a8bac2!important;font-size:11px!important}.nova-command-trigger kbd{font-size:8px!important}
++
++/* Sidebar: expands over the page instead of changing page geometry. */
++.top-nav{position:fixed!important;left:14px!important;top:84px!important;bottom:14px!important;width:var(--n151-nav)!important;height:auto!important;margin:0!important;padding:8px!important;display:flex!important;flex-direction:column!important;align-items:stretch!important;justify-content:flex-start!important;gap:5px!important;background:rgba(7,17,28,.97)!important;border:1px solid var(--n151-line)!important;border-radius:20px!important;overflow:hidden!important;z-index:210!important;box-shadow:0 18px 48px rgba(0,0,0,.28)!important;transition:width .18s cubic-bezier(.2,.8,.2,1),box-shadow .18s ease!important}
++.top-nav:hover{width:196px!important;box-shadow:0 24px 72px rgba(0,0,0,.42),0 0 0 1px rgba(97,230,218,.05)!important}
++.top-nav button,.top-nav:hover button{flex:0 0 auto!important;width:100%!important;height:55px!important;min-width:0!important;min-height:55px!important;margin:0!important;padding:0 15px!important;border:0!important;border-radius:13px!important;display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:flex-start!important;gap:13px!important;background:transparent!important;color:#78909b!important;overflow:hidden!important;white-space:nowrap!important;transition:background .15s,color .15s!important}
++.top-nav button svg{min-width:21px!important;width:21px!important;height:21px!important}.top-nav button span{display:block!important;opacity:0!important;transform:translateX(-4px)!important;font-size:11px!important;font-weight:700!important;transition:opacity .14s,transform .14s!important}.top-nav:hover button span{opacity:1!important;transform:none!important}.top-nav button:hover{background:#101f2d!important;color:#e8f4f6!important}.top-nav button.active{background:linear-gradient(135deg,rgba(71,115,255,.92),rgba(112,88,232,.93))!important;color:#fff!important;box-shadow:0 8px 24px rgba(82,99,242,.24)!important}
++
++/* Main workspace truly follows the window size. */
++.axo-workspace{position:fixed!important;left:98px!important;right:0!important;top:var(--n151-top)!important;bottom:0!important;width:auto!important;height:auto!important;max-width:none!important;min-width:0!important;min-height:0!important;margin:0!important;padding:14px 16px 16px 0!important;overflow:hidden!important;z-index:2!important}
++.panel-glass,.nova-panel{background:linear-gradient(180deg,rgba(14,26,38,.96),rgba(9,18,28,.96))!important;border:1px solid var(--n151-line)!important;box-shadow:0 18px 48px rgba(0,0,0,.16)!important;backdrop-filter:none!important}
++.micro-label{font-size:9px!important;letter-spacing:.14em!important;color:#6bd9cf!important}
++
++/* ---------- HOME ---------- */
++.nova151-home{width:100%;height:100%;min-width:0;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,340px);gap:14px;overflow:hidden}
++.nova151-main{min-width:0;min-height:0;display:grid;grid-template-rows:minmax(360px,1fr) 222px;gap:14px;overflow:hidden}
++.nova151-hero{position:relative;min-width:0;min-height:0;border:1px solid var(--n151-line);border-radius:24px;overflow:hidden;background:
++  radial-gradient(circle at 76% 34%,rgba(92,117,255,.16),transparent 31%),
++  radial-gradient(circle at 25% 8%,rgba(68,216,204,.08),transparent 28%),
++  linear-gradient(145deg,#0d1925,#0a1420 58%,#0c1522);box-shadow:0 24px 72px rgba(0,0,0,.24)}
++.nova151-hero:before{content:"";position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(rgba(139,209,219,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(139,209,219,.025) 1px,transparent 1px);background-size:36px 36px;mask-image:linear-gradient(90deg,#000,transparent 86%)}
++.nova151-hero-copy{position:absolute;z-index:3;left:34px;top:30px;bottom:104px;width:min(52%,610px);display:flex;flex-direction:column;justify-content:center}
++.nova151-kicker{display:flex;align-items:center;gap:8px;margin-bottom:22px}.nova151-live,.nova151-build{height:26px;padding:0 9px;border-radius:8px;border:1px solid var(--n151-line);display:inline-flex;align-items:center;gap:6px;font-size:9px;font-weight:800;letter-spacing:.08em;color:#90a5ad;background:rgba(7,17,27,.48)}.nova151-live i{width:7px;height:7px;border-radius:50%;background:var(--n151-green);box-shadow:0 0 12px rgba(98,227,171,.55)}.nova151-live.running i{background:#7b91ff}.nova151-build{color:#7fded5}
++.nova151-profile-title{display:grid;grid-template-columns:52px minmax(0,1fr);gap:14px;align-items:center}.nova151-profile-icon{width:52px;height:52px;border-radius:16px;display:grid;place-items:center;color:var(--n151-cyan);background:linear-gradient(145deg,rgba(97,230,218,.12),rgba(111,140,255,.10));border:1px solid rgba(110,225,216,.12)}.nova151-profile-title small{display:block;font-size:9px;font-weight:800;letter-spacing:.14em;color:#6f929b}.nova151-profile-title h1{margin:4px 0 0;font-size:clamp(32px,3.1vw,52px);line-height:.98;letter-spacing:-.045em;color:#f1f8f9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
++.nova151-specs{display:flex;align-items:stretch;gap:8px;margin-top:22px;flex-wrap:wrap}.nova151-specs>span{min-width:94px;height:51px;padding:0 12px;border-radius:13px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.05);display:flex;flex-direction:column;justify-content:center}.nova151-specs b{font-size:12px;color:#e4eef1}.nova151-specs small{font-size:8px;color:#708590;margin-top:3px}
++.nova151-launch-row{display:flex;align-items:center;gap:9px;margin-top:24px}.nova151-launch{height:64px;min-width:330px;max-width:470px;flex:1;border:0;border-radius:17px;padding:0 15px;color:#071318;background:linear-gradient(105deg,#66e9d9 0%,#76d9ed 48%,#8298ff 100%);display:grid;grid-template-columns:43px 1fr 22px;gap:11px;align-items:center;text-align:left;cursor:pointer;box-shadow:0 18px 42px rgba(80,203,208,.18);transition:transform .15s,filter .15s}.nova151-launch:hover:not(:disabled){transform:translateY(-2px);filter:brightness(1.04)}.nova151-launch:disabled{opacity:.68;cursor:default}.nova151-launch-icon{width:42px;height:42px;border-radius:13px;background:rgba(3,19,24,.10);display:grid;place-items:center}.nova151-launch>span:nth-child(2){display:flex;flex-direction:column;min-width:0}.nova151-launch b{font-size:13px;letter-spacing:.07em}.nova151-launch small{font-size:9px;margin-top:3px;opacity:.72;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.nova151-square{width:58px;height:58px;border:1px solid var(--n151-line);border-radius:16px;background:#101e2b;color:#9eb0b8;display:grid;place-items:center;cursor:pointer}.nova151-square:hover{color:#effbfb;border-color:var(--n151-line-strong);background:#142534}
++.nova151-hero-visual{position:absolute;right:4%;top:8%;width:39%;height:68%;display:grid;place-items:center}.nova151-ring{position:absolute;border-radius:50%;border:1px solid rgba(99,221,213,.12)}.nova151-ring.r1{width:min(29vw,390px);height:min(29vw,390px);box-shadow:0 0 80px rgba(84,107,255,.08)}.nova151-ring.r2{width:min(22vw,300px);height:min(22vw,300px);border-style:dashed;opacity:.8}.nova151-ring.r3{width:min(15vw,205px);height:min(15vw,205px);background:radial-gradient(circle,rgba(75,218,203,.10),rgba(104,96,240,.07),transparent 68%)}
++.nova151-axolotl{position:relative;width:126px;height:142px;filter:drop-shadow(0 20px 34px rgba(80,225,211,.16))}.nova151-axolotl .face{position:absolute;left:11px;top:11px;width:104px;height:79px;border-radius:34px;background:linear-gradient(145deg,#87f2df,#78d8e5 58%,#a58cf3);box-shadow:inset 0 -10px 24px rgba(21,76,82,.16)}.nova151-axolotl .face i{position:absolute;width:7px;height:9px;border-radius:50%;background:#092a31;top:31px}.nova151-axolotl .face i:first-child{left:30px}.nova151-axolotl .face i:nth-child(2){right:30px}.nova151-axolotl .face b{position:absolute;width:23px;height:10px;border-bottom:2px solid #16464d;border-radius:0 0 18px 18px;left:41px;top:44px}.nova151-axolotl .body{position:absolute;left:32px;top:73px;width:62px;height:66px;border-radius:31px 31px 25px 25px;background:linear-gradient(180deg,#79e5d8,#73c7df)}.nova151-axolotl .gill{position:absolute;width:35px;height:10px;border-radius:999px;background:linear-gradient(90deg,#ef8ac6,#a77df4);z-index:-1}.nova151-axolotl .gl1{left:-11px;top:25px;transform:rotate(-35deg)}.nova151-axolotl .gl2{left:-17px;top:41px;transform:rotate(-7deg)}.nova151-axolotl .gl3{left:-11px;top:57px;transform:rotate(27deg)}.nova151-axolotl .gr1{right:-11px;top:25px;transform:rotate(35deg)}.nova151-axolotl .gr2{right:-17px;top:41px;transform:rotate(7deg)}.nova151-axolotl .gr3{right:-11px;top:57px;transform:rotate(-27deg)}
++.nova151-float{position:absolute;height:30px;padding:0 9px;border-radius:9px;border:1px solid var(--n151-line);background:rgba(7,16,26,.88);display:flex;align-items:center;gap:6px;font-size:9px;font-weight:700;color:#9badb5;backdrop-filter:blur(12px)}.nova151-float svg{color:var(--n151-cyan)}.nova151-float.health{left:3%;top:22%}.nova151-float.boost{right:-2%;top:47%}.nova151-float.core{left:7%;bottom:11%}
++.nova151-quickbar{position:absolute;z-index:4;left:18px;right:18px;bottom:16px;height:72px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.nova151-quickbar button{min-width:0;border:1px solid rgba(255,255,255,.055);border-radius:14px;background:rgba(10,20,30,.88);color:#8fa5ae;display:grid;grid-template-columns:29px 1fr 16px;gap:7px;align-items:center;padding:0 11px;text-align:left;cursor:pointer}.nova151-quickbar button:hover{background:#132433;color:#eff8f8;border-color:var(--n151-line-strong)}.nova151-quickbar button>svg:first-child{color:#6edfd5}.nova151-quickbar button span{display:flex;flex-direction:column;min-width:0}.nova151-quickbar b{font-size:10px;color:#dfeaec}.nova151-quickbar small{font-size:8px;color:#687f8a;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
++
++.nova151-bottom-grid{min-height:0;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(300px,.85fr);gap:14px}.nova151-card{min-height:0;border:1px solid var(--n151-line);border-radius:20px;background:linear-gradient(180deg,#0d1925,#09141f);overflow:hidden}.nova151-card-head{height:50px;padding:0 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,.045)}.nova151-card-head>span{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800;color:#dce8ea}.nova151-card-head>span svg{color:var(--n151-cyan)}.nova151-card-head button{border:0;background:transparent;color:#748d97;font-size:9px;display:flex;align-items:center;gap:4px;cursor:pointer}.nova151-card-head button:hover{color:#dce8ea}
++.nova151-profile-cards{height:calc(100% - 50px);padding:8px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}.nova151-profile-cards>button{min-width:0;border:1px solid rgba(255,255,255,.05);border-radius:14px;background:#101d29;color:#98aab2;padding:10px;display:grid;grid-template-columns:40px 1fr auto;grid-template-rows:1fr auto;gap:7px;text-align:left;cursor:pointer}.nova151-profile-cards>button:hover,.nova151-profile-cards>button.active{border-color:rgba(97,230,218,.18);background:#132330}.nova151-profile-cards .thumb{width:40px;height:40px;border-radius:12px;background:rgba(97,230,218,.07);display:grid;place-items:center;color:#72ddd4;grid-row:1/3}.nova151-profile-cards .copy{display:flex;flex-direction:column;min-width:0}.nova151-profile-cards b{font-size:10px;color:#dbe6e9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.nova151-profile-cards small{font-size:8px;color:#657b86;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.nova151-profile-cards em{font-style:normal;font-size:7px;color:#71d5ff;display:flex;align-items:center;gap:3px}.nova151-profile-cards>button>svg:last-child{color:#82949d;justify-self:end}
++.nova151-server-list{height:calc(100% - 50px);padding:6px 9px;overflow:hidden}.nova151-server-list>button{width:100%;height:48px;border:0;border-bottom:1px solid rgba(255,255,255,.04);background:transparent;color:#899da6;display:grid;grid-template-columns:10px minmax(0,1fr) 48px 56px;gap:7px;align-items:center;text-align:left;padding:0 4px;cursor:pointer}.nova151-server-list>button:hover{background:rgba(255,255,255,.018)}.nova151-server-list .dot{width:7px;height:7px;border-radius:50%;background:#4e5c66}.nova151-server-list .dot.online{background:var(--n151-green);box-shadow:0 0 10px rgba(98,227,171,.35)}.nova151-server-list button>span:nth-child(2){display:flex;flex-direction:column;min-width:0}.nova151-server-list b{font-size:10px;color:#d6e1e4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.nova151-server-list small{font-size:8px;color:#60757f;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.nova151-server-list em,.nova151-server-list strong{font-style:normal;font-size:8px;text-align:right}.nova151-server-list strong{color:#79929d}.nova151-server-list .empty{grid-template-columns:24px 1fr 16px;height:58px;color:#6f8994}.nova151-server-list .empty>span{display:flex!important;flex-direction:column!important}.nova151-server-list .empty b{font-size:10px}.nova151-server-list .empty small{font-size:8px}
++
++.nova151-side{min-width:0;min-height:0;display:grid;grid-template-rows:70px auto auto 118px minmax(130px,1fr);gap:10px;overflow:hidden}.nova151-user-card,.nova151-side-card{border:1px solid var(--n151-line);border-radius:18px;background:linear-gradient(180deg,#0e1a27,#0a1520);color:#dce7e9}.nova151-user-card{width:100%;display:grid;grid-template-columns:42px 1fr 17px;gap:10px;align-items:center;padding:0 13px;text-align:left;cursor:pointer}.nova151-user-card .avatar{width:42px;height:42px;border-radius:13px;background:rgba(97,230,218,.08);display:grid;place-items:center;color:var(--n151-cyan)}.nova151-user-card>span:nth-child(2){display:flex;flex-direction:column}.nova151-user-card small{font-size:7px;letter-spacing:.12em;color:#617a84}.nova151-user-card b{font-size:11px;margin-top:2px}.nova151-user-card em{font-style:normal;font-size:8px;color:#708690;margin-top:2px}.nova151-side-card{padding:14px;min-height:0}.nova151-side-title{display:flex;align-items:center;justify-content:space-between;gap:8px}.nova151-side-title>span{display:flex;align-items:center;gap:7px;font-size:10px;font-weight:800}.nova151-side-title>span svg{color:var(--n151-cyan)}.nova151-side-title em{font-style:normal;font-size:7px;font-weight:900;letter-spacing:.08em;color:#778c96}.nova151-side-title em.on{color:var(--n151-green)}.nova151-side-title button{border:0;background:transparent;color:#6c8490;font-size:8px;cursor:pointer}.nova151-side-card>strong{display:block;font-size:12px;margin-top:12px}.nova151-side-card>p{font-size:9px;color:#6e838e;line-height:1.5;margin:5px 0 12px}.nova151-side-card>button{height:32px;padding:0 10px;border:1px solid rgba(255,255,255,.055);border-radius:9px;background:#13222f;color:#a8bac1;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:space-between;cursor:pointer}.nova151-side-card>button:hover{border-color:var(--n151-line-strong);color:#e6f2f3}.nova151-core-line{display:grid;grid-template-columns:41px 1fr;gap:9px;align-items:center;margin:12px 0}.nova151-core-line .core-mark{width:41px;height:41px;border-radius:13px;background:linear-gradient(145deg,rgba(97,230,218,.12),rgba(158,125,246,.15));display:grid;place-items:center;color:#7be4da;font-weight:900}.nova151-core-line>span:last-child{display:flex;flex-direction:column}.nova151-core-line b{font-size:9px}.nova151-core-line small{font-size:8px;color:#657b86;margin-top:3px}.nova151-system-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:12px}.nova151-system-grid>span{height:38px;border-radius:10px;background:#101d29;display:flex;flex-direction:column;justify-content:center;padding:0 9px}.nova151-system-grid b{font-size:10px}.nova151-system-grid small{font-size:7px;color:#617680;margin-top:2px}.nova151-activity-list{margin-top:8px;overflow:hidden}.nova151-activity-list>div{min-height:40px;border-bottom:1px solid rgba(255,255,255,.04);display:grid;grid-template-columns:9px 1fr;gap:7px;align-items:center}.nova151-activity-list i{width:6px;height:6px;border-radius:50%;background:#596c76}.nova151-activity-list .done i{background:var(--n151-green)}.nova151-activity-list .running i{background:var(--n151-blue)}.nova151-activity-list span{display:flex;flex-direction:column;min-width:0}.nova151-activity-list b{font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.nova151-activity-list small{font-size:7px;color:#5f7580;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.nova151-activity-list .empty{grid-template-columns:19px 1fr;color:#6f8792}
++
++/* ---------- ALL SECONDARY PAGES: same desktop geometry + readable type ---------- */
++.orbit-library,.creator-shell,.library-shell,.accounts-page,.nova-page,.core-prime-page,.settings-new{width:100%!important;height:100%!important;min-width:0!important;min-height:0!important;max-width:none!important;margin:0!important;overflow:hidden!important}
++.orbit-library{grid-template-rows:62px minmax(0,1fr)!important;gap:12px!important}.orbit-library-toolbar{padding:0 2px 0 4px!important}.orbit-library-toolbar h1{font-size:25px!important}.orbit-search{width:min(320px,27vw)!important;height:42px!important;border-radius:12px!important;background:#0e1a26!important}.orbit-search input{font-size:11px!important}.orbit-new-profile{height:42px!important;border-radius:12px!important;font-size:10px!important;background:linear-gradient(105deg,#62dccf,#7397f3)!important;color:#071218!important}.orbit-library-body{grid-template-columns:190px minmax(0,1fr)!important;gap:12px!important}.orbit-library-nav{padding:12px!important;border-radius:18px!important}.orbit-library-title{font-size:9px!important}.orbit-library-nav button{height:46px!important;font-size:11px!important}.orbit-library-nav button span{font-size:11px!important}.orbit-library-nav button b{font-size:8px!important}.orbit-profile-list{border-radius:18px!important;grid-template-rows:42px minmax(0,1fr)!important}.orbit-profile-list-head{grid-template-columns:minmax(260px,1.35fr) 160px 96px 110px 150px!important;font-size:9px!important;padding:0 14px!important}.orbit-profile-row{min-height:76px!important;grid-template-columns:52px minmax(200px,1.35fr) 160px 96px 110px 150px!important;gap:11px!important;padding:6px!important}.orbit-profile-name b,.orbit-profile-version b{font-size:12px!important}.orbit-profile-name small,.orbit-profile-version small{font-size:9px!important}.orbit-profile-memory{font-size:10px!important}.orbit-profile-state span{font-size:9px!important}.orbit-profile-actions button{width:34px!important;height:34px!important}
++
++.nova-page{display:grid!important;gap:12px!important}.nova-page-head,.page-heading-new,.fast-page-head{min-height:82px!important;padding:14px 18px!important;border-radius:18px!important;background:linear-gradient(180deg,#0f1b28,#0b1621)!important;border:1px solid var(--n151-line)!important}.nova-page-head h1,.page-heading-new h1,.fast-page-head h1{font-size:26px!important;line-height:1.05!important;letter-spacing:-.025em!important;margin:4px 0 0!important}.nova-page-head p,.page-subtitle,.account-lead,.fast-page-head p{font-size:10px!important;line-height:1.5!important;color:#728994!important}.nova-panel,.creator-board,.account-library,.account-create,.setting-tile,.security-tile,.fast-feature-card,.core-group,.mods-bento,.discover-shell{border-radius:18px!important;background:linear-gradient(180deg,#0e1a27,#0a1520)!important;border-color:var(--n151-line)!important}.nova-panel-title{min-height:44px!important;padding:0 13px!important}.nova-panel-title>span{font-size:10px!important}.nova-panel-title button{font-size:9px!important}
++
++.server-add-bar{height:52px!important;border-radius:16px!important}.server-add-bar input{height:36px!important;font-size:10px!important}.server-card{border-radius:18px!important;padding:13px!important}.server-card-top b{font-size:12px!important}.server-card-top small{font-size:9px!important}.server-live{font-size:9px!important}.server-card>p{font-size:9px!important;height:39px!important}.server-meta span{font-size:8px!important}.server-actions button{height:34px!important;font-size:9px!important}
++
++.nova-stat-row>div{min-height:64px!important;border-radius:15px!important}.nova-stat-row b{font-size:18px!important}.nova-stat-row span,.nova-stat-row small{font-size:9px!important}.nova-mod-grid{gap:12px!important}.nova-dense-list b,.nova-pack-list b,.nova-discover-list b{font-size:10px!important}.nova-dense-list small,.nova-pack-list p,.nova-discover-list small{font-size:8px!important}
++
++.boost-preset{height:70px!important;border-radius:15px!important}.boost-preset b{font-size:11px!important}.boost-preset small{font-size:8px!important}.boost-preset em{font-size:7px!important}.doctor-summary b{font-size:11px!important}.doctor-summary small{font-size:9px!important}.doctor-issues b{font-size:10px!important}.doctor-issues small{font-size:8px!important}.snapshot-list b{font-size:9px!important}.snapshot-list small{font-size:8px!important}.runtime-hero b{font-size:19px!important}.runtime-hero small,.runtime-facts span,.unique-stack small{font-size:8px!important}.unique-stack strong{font-size:10px!important}
++
++.activity-list b{font-size:10px!important}.activity-list small,.activity-list time{font-size:8px!important}.engine-progress b,.update-mini b{font-size:12px!important}.engine-progress small,.update-mini small{font-size:9px!important}
++
++.accounts-page{gap:12px!important}.account-hero-new{min-height:170px!important;border-radius:20px!important;padding:20px!important}.account-hero-new h1{font-size:34px!important}.account-library,.account-create{border-radius:18px!important}.account-card-new b{font-size:12px!important}.account-card-new small,.account-card-new p{font-size:9px!important}.account-create h2{font-size:20px!important}.account-create p{font-size:10px!important}
++
++.core-prime-page{gap:12px!important}.core-prime-head{min-height:82px!important}.core-prime-stats>div{border-radius:15px!important}.core-prime-stats b{font-size:15px!important}.core-prime-stats span{font-size:8px!important}.core-group{min-height:170px!important;padding:14px!important}.core-group-head b{font-size:12px!important}.core-group-head small{font-size:9px!important}.core-chip-cloud span{font-size:8px!important;height:25px!important}
++
++.settings-new{gap:12px!important}.settings-bento{height:100%!important;min-height:0!important;overflow-y:auto!important;padding-right:4px!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:10px!important}.setting-tile,.security-tile{min-height:132px!important;padding:15px!important}.setting-tile>span{font-size:9px!important}.setting-tile>b{font-size:14px!important}.setting-tile small{font-size:9px!important}
++.creator-shell{grid-template-columns:minmax(250px,320px) minmax(0,1fr)!important;gap:14px!important;overflow-y:auto!important}.creator-intro h1{font-size:38px!important}.creator-intro>p{font-size:11px!important}.creator-board{padding:18px!important}.version-carousel b{font-size:11px!important}.version-carousel small{font-size:9px!important}.creator-form-grid label>span{font-size:9px!important}.library-shell{overflow:hidden!important}
++
++/* Responsive window modes */
++@media(min-width:1750px){.nova151-home{grid-template-columns:minmax(0,1fr) 370px}.nova151-main{grid-template-rows:minmax(390px,1fr) 236px}.nova151-hero-copy{left:42px;width:min(50%,660px)}.nova151-profile-title h1{font-size:54px}.nova151-quickbar{height:76px}.nova151-bottom-grid{grid-template-columns:1.2fr .8fr}.settings-bento{grid-template-columns:repeat(4,minmax(0,1fr))!important}}
++@media(max-width:1320px){.status-chip{display:none!important}.nova151-home{grid-template-columns:minmax(0,1fr) 306px}.nova151-main{grid-template-rows:minmax(330px,1fr) 205px}.nova151-hero-copy{left:26px;top:24px;bottom:98px;width:55%}.nova151-launch{min-width:270px}.nova151-hero-visual{right:1%;width:40%}.nova151-quickbar{height:66px}.nova151-profile-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.nova151-profile-cards>button:nth-child(3){display:none}.orbit-library-body{grid-template-columns:160px minmax(0,1fr)!important}.orbit-profile-list-head{grid-template-columns:minmax(220px,1.2fr) 135px 90px 130px!important}.orbit-profile-list-head span:nth-child(4){display:none}.orbit-profile-row{grid-template-columns:52px minmax(180px,1.2fr) 135px 90px 130px!important}.orbit-profile-state{display:none}.settings-bento{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
++@media(max-width:1120px){:root{--n151-nav:66px}.axo-workspace{left:88px!important}.top-nav{width:66px!important}.top-nav:hover{width:186px!important}.nova-command-trigger{min-width:42px!important;width:42px!important;padding:0!important;justify-content:center!important}.nova-command-trigger span,.nova-command-trigger kbd{display:none!important}.nova151-home{grid-template-columns:1fr}.nova151-side{display:none}.nova151-main{grid-template-rows:minmax(350px,1fr) 210px}.nova151-hero-copy{width:58%}.nova151-bottom-grid{grid-template-columns:1.1fr .9fr}.accounts-page,.core-prime-layout{grid-template-columns:1fr!important}.account-create,.core-prime-main{display:none!important}.settings-bento{grid-template-columns:repeat(2,minmax(0,1fr))!important}}
++@media(max-width:980px){.user-chip{min-width:140px!important}.axo-brand-copy{display:none!important}.axo-brand{min-width:auto!important}.nova151-hero-copy{width:100%;right:24px}.nova151-hero-visual{opacity:.17;right:-9%}.nova151-profile-title h1{font-size:34px}.nova151-quickbar{grid-template-columns:repeat(2,1fr);height:124px}.nova151-hero-copy{bottom:152px}.nova151-main{grid-template-rows:minmax(420px,1fr) 200px}.nova151-bottom-grid{grid-template-columns:1fr}.nova151-servers{display:none}.orbit-library-nav{display:none!important}.orbit-library-body{grid-template-columns:1fr!important}.settings-bento{grid-template-columns:1fr!important}}
++@media(max-height:760px){:root{--n151-top:64px}.axo-topbar{height:64px!important}.top-nav{top:74px!important;bottom:10px!important}.axo-workspace{top:64px!important;padding-top:10px!important}.nova151-main{grid-template-rows:minmax(300px,1fr) 174px}.nova151-hero-copy{top:18px;bottom:87px}.nova151-kicker{margin-bottom:12px}.nova151-profile-title h1{font-size:34px}.nova151-specs{margin-top:13px}.nova151-launch-row{margin-top:15px}.nova151-launch{height:56px}.nova151-square{width:52px;height:52px}.nova151-quickbar{height:58px;bottom:12px}.nova151-bottom-grid{grid-template-columns:1.2fr .8fr}.nova151-card-head{height:42px}.nova151-profile-cards,.nova151-server-list{height:calc(100% - 42px)}.nova151-side{grid-template-rows:62px auto auto 104px minmax(100px,1fr)}.nova151-user-card{height:62px}.nova151-side-card{padding:11px}.orbit-profile-row{min-height:66px!important}.nova-page-head,.page-heading-new,.fast-page-head{min-height:68px!important;padding:10px 15px!important}.nova-page-head h1,.page-heading-new h1,.fast-page-head h1{font-size:22px!important}.nova-page-head p,.page-subtitle,.account-lead{display:none!important}}
++
++/* Thin internal scrollbars only. */
++.orbit-profile-scroll,.core-module-catalog,.settings-bento,.doctor-issues,.snapshot-list,.activity-list{scrollbar-width:thin;scrollbar-color:#263c49 transparent}
++.orbit-profile-scroll::-webkit-scrollbar,.core-module-catalog::-webkit-scrollbar,.settings-bento::-webkit-scrollbar,.doctor-issues::-webkit-scrollbar,.snapshot-list::-webkit-scrollbar,.activity-list::-webkit-scrollbar{width:5px}.orbit-profile-scroll::-webkit-scrollbar-thumb,.core-module-catalog::-webkit-scrollbar-thumb,.settings-bento::-webkit-scrollbar-thumb,.doctor-issues::-webkit-scrollbar-thumb,.snapshot-list::-webkit-scrollbar-thumb,.activity-list::-webkit-scrollbar-thumb{background:#263c49;border-radius:999px}
+diff --git a/src-tauri/Cargo.toml b/src-tauri/Cargo.toml
+--- a/src-tauri/Cargo.toml
++++ b/src-tauri/Cargo.toml
+@@ -1,6 +1,6 @@
+ [package]
+ name = "axolot-client"
+-version = "0.15.0"
++version = "0.15.1"
+ description = "Axolot Client Minecraft launcher"
+ authors = ["Axolot Client"]
+ edition = "2021"
+diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
+--- a/src-tauri/src/lib.rs
++++ b/src-tauri/src/lib.rs
+@@ -377,7 +377,7 @@
+ const AXOLOT_CORE_VERSION: &str = "0.15.0";
+ const AXOLOT_CORE_GAME_VERSION: &str = "1.21.4";
+ const AXOLOT_CORE_FILE: &str = "axolot-core-0.15.0.jar";
+-const USER_AGENT: &str = "AxolotClient/0.15.0 (+https://axolot.local)";
++const USER_AGENT: &str = "AxolotClient/0.15.1 (+https://axolot.local)";
+ const AXOLOT_CURSEFORGE_PROXY: &str = "https://rlbgvgosxrhqnppbrtey.supabase.co/functions/v1/axolot-curseforge";
+ 
+ fn emit_progress(app: &tauri::AppHandle, stage: &str, message: impl Into<String>, percent: u8) {
+diff --git a/src-tauri/tauri.conf.json b/src-tauri/tauri.conf.json
+--- a/src-tauri/tauri.conf.json
++++ b/src-tauri/tauri.conf.json
+@@ -1,7 +1,7 @@
+ {
+   "$schema": "https://schema.tauri.app/config/2",
+   "productName": "Axolot Client",
+-  "version": "0.15.0",
++  "version": "0.15.1",
+   "identifier": "gg.axolot.client",
+   "build": {
+     "beforeDevCommand": "npm run dev",
+@@ -12,15 +12,17 @@
+   "app": {
+     "windows": [
+       {
+-        "title": "Axolot Client \u2014 Release Candidate 0.15.0",
+-        "width": 1500,
+-        "height": 900,
+-        "minWidth": 1100,
+-        "minHeight": 700,
++        "title": "Axolot Client \u2014 Nova UI Preview 0.15.1",
++        "width": 1440,
++        "height": 860,
++        "minWidth": 980,
++        "minHeight": 640,
+         "resizable": true,
+         "fullscreen": false,
+         "decorations": true,
+-        "maximized": false
++        "maximized": false,
++        "maximizable": true,
++        "minimizable": true
+       }
+     ],
+     "security": {
