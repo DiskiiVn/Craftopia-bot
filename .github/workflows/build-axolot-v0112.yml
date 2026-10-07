@@ -137,51 +137,37 @@ jobs:
               raise RuntimeError("Microsoft connect block not found")
           s=s.replace(old,new)
 
-          old_overlay = """      {microsoftDevice && (
-                <div className="microsoft-overlay">
-                  <div className="microsoft-dialog panel-glass">
-                    <span className="micro-label">MICROSOFT SECURE SIGN-IN</span>
-                    <div className="microsoft-orb"><ShieldCheck size={30}/></div>
-                    <h2>Link your Minecraft account</h2>
-                    <p>Open Microsoft sign-in and enter this one-time code. Axolot is waiting securely in the background.</p>
-                    <button className="device-code" onClick={()=>navigator.clipboard?.writeText(microsoftDevice.user_code)}>{microsoftDevice.user_code}</button>
-                    <div className="microsoft-modal-actions">
-                      <button className="accent-action" onClick={()=>void invoke('open_external_url',{url:microsoftDevice.verification_uri})}><LogIn size={15}/> Open Microsoft</button>
-                      <button onClick={()=>navigator.clipboard?.writeText(microsoftDevice.user_code)}>Copy code</button>
-                    </div>
-                    <small>{microsoftBusy ? 'Waiting for Microsoft authorization…' : microsoftDevice.message}</small>
-                  </div>
-                </div>
-              )}"""
+          overlay_start = s.find("      {microsoftDevice && (")
+          overlay_end = s.find("\n\n      {consoleOpen && (", overlay_start)
+          if overlay_start < 0 or overlay_end < 0:
+              raise RuntimeError("Microsoft overlay boundaries not found")
           new_overlay = """      {microsoftDevice && (
-                <div className="microsoft-overlay">
-                  <div className={`microsoft-dialog panel-glass ${microsoftError ? 'has-error' : ''}`}>
-                    <span className="micro-label">MICROSOFT SECURE SIGN-IN</span>
-                    <div className="microsoft-orb">{microsoftError ? <AlertTriangle size={30}/> : <ShieldCheck size={30}/>}</div>
-                    <h2>{microsoftError ? 'Microsoft signed in, but Minecraft could not finish' : 'Link your Minecraft account'}</h2>
-                    <p>{microsoftError ? 'Axolot reached an error after or during Microsoft authorization. The exact backend response is shown below.' : 'Open Microsoft sign-in and enter this one-time code. Axolot will continue through Xbox and Minecraft Services automatically.'}</p>
-                    {!microsoftError && <button className="device-code" onClick={()=>navigator.clipboard?.writeText(microsoftDevice.user_code)}>{microsoftDevice.user_code}</button>}
-                    {microsoftError && <div className="microsoft-error-box"><b>LOGIN DIAGNOSTIC</b><span>{microsoftError}</span></div>}
-                    <div className="microsoft-modal-actions">
-                      {microsoftError ? (
-                        <>
-                          <button className="accent-action" onClick={()=>{setMicrosoftDevice(null);setMicrosoftError('');setMicrosoftStage('');void connectMicrosoftAccount();}}><RefreshCw size={15}/> Try again</button>
-                          <button onClick={()=>{setMicrosoftDevice(null);setMicrosoftError('');setMicrosoftStage('');}}>Close</button>
-                        </>
-                      ) : (
-                        <>
-                          <button className="accent-action" onClick={()=>void invoke('open_external_url',{url:microsoftDevice.verification_uri})}><LogIn size={15}/> Open Microsoft</button>
-                          <button onClick={()=>navigator.clipboard?.writeText(microsoftDevice.user_code)}>Copy code</button>
-                        </>
-                      )}
-                    </div>
-                    <small>{microsoftStage || (microsoftBusy ? 'Waiting for Microsoft authorization…' : microsoftDevice.message)}</small>
-                  </div>
-                </div>
-              )}"""
-          if old_overlay not in s:
-              raise RuntimeError("Microsoft overlay block not found")
-          s=s.replace(old_overlay,new_overlay)
+        <div className="microsoft-overlay">
+          <div className={`microsoft-dialog panel-glass ${microsoftError ? 'has-error' : ''}`}>
+            <span className="micro-label">MICROSOFT SECURE SIGN-IN</span>
+            <div className="microsoft-orb">{microsoftError ? <AlertTriangle size={30}/> : <ShieldCheck size={30}/>}</div>
+            <h2>{microsoftError ? 'Microsoft signed in, but Minecraft could not finish' : 'Link your Minecraft account'}</h2>
+            <p>{microsoftError ? 'Axolot reached an error after or during Microsoft authorization. The exact backend response is shown below.' : 'Open Microsoft sign-in and enter this one-time code. Axolot will continue through Xbox and Minecraft Services automatically.'}</p>
+            {!microsoftError && <button className="device-code" onClick={()=>navigator.clipboard?.writeText(microsoftDevice.user_code)}>{microsoftDevice.user_code}</button>}
+            {microsoftError && <div className="microsoft-error-box"><b>LOGIN DIAGNOSTIC</b><span>{microsoftError}</span></div>}
+            <div className="microsoft-modal-actions">
+              {microsoftError ? (
+                <>
+                  <button className="accent-action" onClick={()=>{setMicrosoftDevice(null);setMicrosoftError('');setMicrosoftStage('');void connectMicrosoftAccount();}}><RefreshCw size={15}/> Try again</button>
+                  <button onClick={()=>{setMicrosoftDevice(null);setMicrosoftError('');setMicrosoftStage('');}}>Close</button>
+                </>
+              ) : (
+                <>
+                  <button className="accent-action" onClick={()=>void invoke('open_external_url',{url:microsoftDevice.verification_uri})}><LogIn size={15}/> Open Microsoft</button>
+                  <button onClick={()=>navigator.clipboard?.writeText(microsoftDevice.user_code)}>Copy code</button>
+                </>
+              )}
+            </div>
+            <small>{microsoftStage || (microsoftBusy ? 'Waiting for Microsoft authorization…' : microsoftDevice.message)}</small>
+          </div>
+        </div>
+      )}"""
+          s = s[:overlay_start] + new_overlay + s[overlay_end:]
           p.write_text(s,encoding="utf-8")
 
           p=root/"src/styles.css"
