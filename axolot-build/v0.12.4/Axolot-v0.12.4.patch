@@ -1,0 +1,422 @@
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=target' /mnt/data/axolot_orig/axolot-v0123-work/.github/workflows/release-axolot.yml /mnt/data/axolot_src/axolot-v0123-work/.github/workflows/release-axolot.yml
+--- /mnt/data/axolot_orig/axolot-v0123-work/.github/workflows/release-axolot.yml	2026-10-07 04:32:22.000000000 +0000
++++ /mnt/data/axolot_src/axolot-v0123-work/.github/workflows/release-axolot.yml	2026-10-07 10:27:19.198307662 +0000
+@@ -44,7 +44,7 @@
+             version = $version
+             download_url = $download
+             sha256 = $sha
+-            notes = "Axolot Client $version automatic release"
++            notes = "Desktop launcher shell, fixed Play dashboard and hands-free verified updates"
+             mandatory = $false
+           } | ConvertTo-Json | Set-Content -Encoding UTF8 axolot-update.json
+           "version=$version" >> $env:GITHUB_OUTPUT
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=target' /mnt/data/axolot_orig/axolot-v0123-work/README.md /mnt/data/axolot_src/axolot-v0123-work/README.md
+--- /mnt/data/axolot_orig/axolot-v0123-work/README.md	2026-10-07 09:34:08.000000000 +0000
++++ /mnt/data/axolot_src/axolot-v0123-work/README.md	2026-10-07 10:29:10.554218554 +0000
+@@ -51,7 +51,7 @@
+ - The launcher does not reuse another launcher's Client ID and does not attempt to bypass Minecraft Services authorization.
+ 
+ 
+-## v0.12.3 Multi Identity Vault
++## v0.12.4 Multi Identity Vault
+ - Unlimited Offline/Crack identities with single-add and bulk-add support.
+ - Multiple Microsoft/Premium identities can coexist in the same launcher.
+ - Microsoft refresh tokens are stored in the OS credential vault via the Rust keyring backend, never in localStorage.
+@@ -59,3 +59,12 @@
+ - Account filters, identity counts, session status badges and one-click active-account switching.
+ - Offline and Microsoft accounts may share the same visible Minecraft username without colliding.
+ - Minecraft AppID approval handling from v0.12.1 remains in place.
++
++
++## v0.12.4 Fixed Desktop Shell + Hands-free Update
++- Play is now a fixed desktop dashboard: no full-window page scrolling and no marketing-style hero copy.
++- Navigation is a compact icon rail on the left; only content-heavy views such as Profiles, Mods, Accounts and Settings scroll inside their own panels.
++- The launch control is icon-first and no longer displays “Play Minecraft”.
++- Automatic updates are enabled by default. On startup Axolot checks the signed release channel, downloads the NSIS installer internally, verifies SHA-256, starts the silent installer, then exits the old build.
++- Background update checks run when the launcher regains focus and every 10 minutes. If Minecraft is currently running, Axolot defers installation instead of interrupting the session.
++- GitHub Actions builds the Windows NSIS installer and publishes `axolot-update.json` automatically for `axolot-v*` tags.
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=target' /mnt/data/axolot_orig/axolot-v0123-work/package.json /mnt/data/axolot_src/axolot-v0123-work/package.json
+--- /mnt/data/axolot_orig/axolot-v0123-work/package.json	2026-10-07 09:33:52.000000000 +0000
++++ /mnt/data/axolot_src/axolot-v0123-work/package.json	2026-10-07 10:27:19.198127762 +0000
+@@ -1,7 +1,7 @@
+ {
+   "name": "axolot-client",
+   "private": true,
+-  "version": "0.12.3",
++  "version": "0.12.4",
+   "type": "module",
+   "scripts": {
+     "dev": "vite",
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=target' /mnt/data/axolot_orig/axolot-v0123-work/src/main.tsx /mnt/data/axolot_src/axolot-v0123-work/src/main.tsx
+--- /mnt/data/axolot_orig/axolot-v0123-work/src/main.tsx	2026-10-07 09:33:52.000000000 +0000
++++ /mnt/data/axolot_src/axolot-v0123-work/src/main.tsx	2026-10-07 10:29:10.553501128 +0000
+@@ -458,9 +458,23 @@
+         if (cancelled) return;
+         setUpdateStatus(update);
+         if (update.available) {
+-          setBootMessage(`Axolot ${update.latest_version} is ready to install.`);
+-          const dismissed = sessionStorage.getItem('axolot.dismissedUpdateVersion');
+-          if (dismissed !== update.latest_version) setUpdatePromptOpen(true);
++          if (autoInstallUpdates) {
++            setBootPercent(76);
++            setBootMessage(`Updating Axolot to ${update.latest_version}...`);
++            setUpdatingLauncher(true);
++            try {
++              await invoke<string>('install_launcher_update', { downloadUrl: update.download_url, sha256: update.sha256 });
++              return;
++            } catch (error) {
++              setUpdatingLauncher(false);
++              setStatus(String(error).replace(/^Error: /, ''));
++              setUpdatePromptOpen(true);
++            }
++          } else {
++            setBootMessage(`Axolot ${update.latest_version} is ready.`);
++            const dismissed = sessionStorage.getItem('axolot.dismissedUpdateVersion');
++            if (dismissed !== update.latest_version) setUpdatePromptOpen(true);
++          }
+         }
+       } catch {
+         // The launcher remains usable when the update endpoint is temporarily unavailable.
+@@ -488,8 +502,21 @@
+         if (cancelled) return;
+         setUpdateStatus(next);
+         if (next.available) {
+-          const dismissed = sessionStorage.getItem('axolot.dismissedUpdateVersion');
+-          if (dismissed !== next.latest_version) setUpdatePromptOpen(true);
++          if (autoInstallUpdates && gameStatus?.state !== 'running' && !updatingLauncher) {
++            setUpdatingLauncher(true);
++            setStatus(`Updating Axolot ${next.latest_version}...`);
++            try {
++              await invoke<string>('install_launcher_update', { downloadUrl: next.download_url, sha256: next.sha256 });
++              return;
++            } catch (error) {
++              setUpdatingLauncher(false);
++              setStatus(String(error).replace(/^Error: /, ''));
++              setUpdatePromptOpen(true);
++            }
++          } else {
++            const dismissed = sessionStorage.getItem('axolot.dismissedUpdateVersion');
++            if (dismissed !== next.latest_version) setUpdatePromptOpen(true);
++          }
+         }
+       } catch {
+         // Background update checks should never interrupt gameplay or navigation.
+@@ -503,7 +530,7 @@
+       window.clearInterval(timer);
+       window.removeEventListener('focus', onFocus);
+     };
+-  }, [booting, autoInstallUpdates, updateManifestUrl]);
++  }, [booting, autoInstallUpdates, updateManifestUrl, gameStatus?.state, updatingLauncher]);
+ 
+   React.useEffect(() => {
+     if (!consoleOpen) return;
+@@ -1155,12 +1182,12 @@
+       <header className="axo-topbar">
+         <button className="axo-brand" onClick={() => setPage('play')}>
+           <span className="axo-logo"><i /><b>A</b></span>
+-          <span className="axo-brand-copy"><strong>AXOLOT</strong><small>CLIENT · NEBULA 0.12</small></span>
++          <span className="axo-brand-copy"><strong>AXOLOT</strong><small>CLIENT</small></span>
+         </button>
+ 
+         <nav className="top-nav">
+           {nav.map(({ id, icon: Icon, label }) => (
+-            <button key={id} className={page === id ? 'active' : ''} onClick={() => { setPage(id); setCreatingProfile(false); setManagingModsProfileId(null); }}>
++            <button key={id} title={label} aria-label={label} className={page === id ? 'active' : ''} onClick={() => { setPage(id); setCreatingProfile(false); setManagingModsProfileId(null); }}>
+               <Icon size={16} /><span>{label}</span>
+             </button>
+           ))}
+@@ -1183,103 +1210,98 @@
+ 
+       <main className="axo-workspace">
+         {page === 'play' && activeProfile && (
+-          <section className="home-grid">
+-            <div className="hero-reef panel-glass">
+-              <div className="hero-gridlines" />
+-              <div className="hero-copy-new">
+-                <span className="micro-label">AXOLOT NEBULA 0.12.3 // MULTI IDENTITY</span>
+-                <h1>Own your game.<br/><em>Move without friction.</em></h1>
+-                <p>Profiles, accounts, mods and performance live in one focused command layer — fast to read, fast to switch, built for Minecraft.</p>
+-
+-                <div className="active-profile-pill">
+-                  <span className="profile-sigil"><Gamepad2 size={18} /></span>
+-                  <span><small>ACTIVE PROFILE</small><b>{activeProfile.name}</b></span>
+-                  <span className="profile-spec">{activeProfile.versionId} · {activeProfile.loader} · {activeProfile.ram} GB</span>
++          <section className="axo-home-fixed">
++            <div className="axo-home-main">
++              <div className="axo-stage panel-glass">
++                <div className="axo-stage-head">
++                  <div>
++                    <span className="micro-label">AXOLOT 0.12.4</span>
++                    <h2>{activeProfile.name}</h2>
++                    <small>{activeProfile.versionId} · {activeProfile.loader} · {activeProfile.ram} GB</small>
++                  </div>
++                  <div className={`stage-state game-${gameStatus?.state || 'stopped'}`}>
++                    <i />
++                    {gameStatus?.state === 'running' ? 'Running' : gameStatus?.state === 'crashed' ? 'Crashed' : 'Ready'}
++                  </div>
+                 </div>
+ 
+-                <button className="active-account-pill" onClick={() => setPage('accounts')}>
+-                  <span className="user-avatar"><User size={15} /></span>
+-                  <span className="active-account-copy"><small>PLAYING AS</small><b>{activeAccount?.username || launcherName}</b></span>
+-                  <span className={`account-kind ${activeAccount?.kind === 'microsoft' ? 'microsoft' : 'offline'}`}>{activeAccount?.kind === 'microsoft' ? 'MICROSOFT' : 'OFFLINE'}</span>
+-                </button>
+-
+-                <div className="hero-buttons">
+-                  <button className="launch-primary" disabled={launching || gameStatus?.state === 'running'} onClick={() => launchProfile(activeProfile)}>
+-                    <span className="launch-icon">{gameStatus?.state === 'running' ? <Activity size={20}/> : <Play size={20} fill="currentColor" />}</span>
+-                    <span><b>{gameStatus?.state === 'running' ? 'MINECRAFT IS RUNNING' : launching ? 'PREPARING GAME...' : 'LAUNCH MINECRAFT'}</b><small>{gameStatus?.state === 'running' ? `PID ${gameStatus.pid ?? '—'} · Console is live` : activeProfile.modpack || 'Axolot optimized profile'}</small></span>
+-                    <ChevronRight size={18} />
+-                  </button>
+-                  <button className="launch-secondary" onClick={sync}><Download size={18} /><span>Sync</span></button>
++                <div className="axo-stage-visual">
++                  <div className="axo-stage-glow" />
++                  <div className="axo-portal axo-portal-home" aria-hidden="true">
++                    <div className="portal-ring ring-outer" />
++                    <div className="portal-ring ring-mid" />
++                    <div className="portal-ring ring-inner" />
++                    <div className="axo-creature">
++                      <span className="gill gill-l1"/><span className="gill gill-l2"/><span className="gill gill-l3"/>
++                      <span className="gill gill-r1"/><span className="gill gill-r2"/><span className="gill gill-r3"/>
++                      <div className="axo-head"><span className="eye e1"/><span className="eye e2"/><span className="smile"/></div>
++                      <div className="axo-body" />
++                    </div>
++                    <span className="portal-tag tag-fps">FPS</span>
++                    <span className="portal-tag tag-safe">SAFE</span>
++                    <span className="portal-tag tag-core">AXO CORE</span>
++                  </div>
+                 </div>
+ 
+-                <div className="hero-metrics">
+-                  <span><Zap size={14} /><b>{activeProfile.autoOptimized ? 'AutoBoost' : 'Custom'}</b><small>Performance</small></span>
+-                  <span><Package size={14} /><b>{localMods.length || '—'}</b><small>Local mods</small></span>
+-                  <span><HardDrive size={14} /><b>Local</b><small>Game runtime</small></span>
++                <div className="axo-stage-control">
++                  <span className="stage-profile-icon"><Gamepad2 size={23}/></span>
++                  <span className="stage-profile-info"><b>{activeProfile.name}</b><small>{activeProfile.versionId} · {activeProfile.loader} · {activeProfile.ram} GB</small></span>
++                  <button className="stage-small-action" onClick={() => openProfileFolder(activeProfile)} title="Open profile folder"><FolderOpen size={19}/></button>
++                  <button className="stage-small-action" onClick={sync} title="Sync"><Download size={19}/></button>
++                  <button className="stage-launch" disabled={launching || gameStatus?.state === 'running'} onClick={() => launchProfile(activeProfile)} title="Launch">
++                    {gameStatus?.state === 'running' ? <Activity size={27}/> : <Play size={29} fill="currentColor"/>}
++                  </button>
+                 </div>
+               </div>
+ 
+-              <div className="axo-portal" aria-hidden="true">
+-                <div className="portal-ring ring-outer" />
+-                <div className="portal-ring ring-mid" />
+-                <div className="portal-ring ring-inner" />
+-                <div className="axo-creature">
+-                  <span className="gill gill-l1"/><span className="gill gill-l2"/><span className="gill gill-l3"/>
+-                  <span className="gill gill-r1"/><span className="gill gill-r2"/><span className="gill gill-r3"/>
+-                  <div className="axo-head"><span className="eye e1"/><span className="eye e2"/><span className="smile"/></div>
+-                  <div className="axo-body" />
++              <div className="home-library panel-glass">
++                <div className="home-library-tabs">
++                  <button className="active"><Gamepad2 size={16}/> Recent</button>
++                  <button onClick={() => activeProfile && openModLibrary(activeProfile, 'modpacks')}><FileArchive size={16}/> Modpacks</button>
++                  <button onClick={() => activeProfile && openModLibrary(activeProfile, 'installed')}><Package size={16}/> Mods</button>
++                  <button className="library-new" onClick={() => { setPage('profiles'); setCreatingProfile(true); }} title="New profile"><Plus size={16}/></button>
++                </div>
++                <div className="home-profile-list">
++                  {profiles.slice(0, 6).map((profile) => (
++                    <div key={profile.id} className={`home-profile-row ${activeProfileId === profile.id ? 'active' : ''}`} onClick={() => setActiveProfileId(profile.id)}>
++                      <span className="home-profile-thumb"><Gamepad2 size={18}/></span>
++                      <span className="home-profile-copy"><b>{profile.name}</b><small>{profile.versionId} · {profile.loader}</small></span>
++                      {profile.autoOptimized && <span className="home-boost"><Zap size={11}/> Boost</span>}
++                      <button className="home-row-play" onClick={(e) => { e.stopPropagation(); void launchProfile(profile); }} disabled={launching} title="Launch profile"><Play size={17} fill="currentColor"/></button>
++                    </div>
++                  ))}
+                 </div>
+-                <span className="portal-tag tag-fps">+FPS</span>
+-                <span className="portal-tag tag-safe">SAFE</span>
+-                <span className="portal-tag tag-core">AXO CORE</span>
+               </div>
+             </div>
+ 
+-            <div className="side-stack">
+-              <div className="pulse-card panel-glass">
+-                <div className="card-title-row"><div><span className="micro-label">CLIENT PULSE</span><h3>{status}</h3></div><button onClick={sync}><Download size={16}/></button></div>
+-                <div className="pulse-bar"><span style={{width: `${progress}%`}} /></div>
+-                <div className="pulse-bottom"><span>{progress === 100 ? 'Everything synced' : 'Working...'}</span><b>{progress}%</b></div>
+-              </div>
++            <aside className="axo-home-side">
++              <button className="home-account panel-glass" onClick={() => setPage('accounts')}>
++                <span className="home-account-avatar"><User size={22}/></span>
++                <span><b>{activeAccount?.username || launcherName}</b><small>{activeAccount?.kind === 'microsoft' ? 'Microsoft' : 'Offline'}</small></span>
++                <ChevronRight size={18}/>
++              </button>
+ 
+-              <div className="quick-tools panel-glass">
+-                <div className="card-title-row"><div><span className="micro-label">QUICK TOOLS</span><h3>Jump back in</h3></div></div>
+-                <div className="tool-grid">
+-                  <button onClick={() => { setPage('profiles'); setManagingModsProfileId(null); }}><Boxes size={18}/><span>Profiles</span></button>
+-                  <button onClick={() => activeProfile && openModLibrary(activeProfile, 'installed')}><Package size={18}/><span>Mods</span></button>
+-                  <button onClick={() => activeProfile && openModLibrary(activeProfile, 'modpacks')}><FileArchive size={18}/><span>Modpacks</span></button>
+-                  <button onClick={showGameConsole}><Terminal size={18}/><span>Live Console</span></button>
+-                  {gameStatus?.state === 'crashed' && <button className="tool-crash" onClick={showCrashCenter}><AlertTriangle size={18}/><span>Crash Center</span></button>}
+-                  <button onClick={() => setPage('accounts')}><Users size={18}/><span>Accounts</span></button>
+-                  <button onClick={() => setPage('settings')}><Settings size={18}/><span>Settings</span></button>
+-                </div>
++              <div className="system-mini panel-glass">
++                <div><Cpu size={21}/><b>{activeProfile.ram} GB</b><small>RAM</small></div>
++                <div><Package size={21}/><b>{localMods.length}</b><small>Mods</small></div>
++                <div><ShieldCheck size={21}/><b>Safe</b><small>Core</small></div>
+               </div>
+-            </div>
+ 
+-            <div className="profile-ribbon panel-glass">
+-              <div className="section-head-new">
+-                <div><span className="micro-label">YOUR INSTANCES</span><h2>Profile shelf</h2></div>
+-                <button className="text-action" onClick={() => { setPage('profiles'); setCreatingProfile(true); }}><Plus size={15}/> New profile</button>
+-              </div>
+-              <div className="profile-capsules">
+-                {profiles.slice(0, 4).map((profile) => (
+-                  <button key={profile.id} className={`profile-capsule ${activeProfileId === profile.id ? 'active' : ''}`} onClick={() => setActiveProfileId(profile.id)}>
+-                    <span className="capsule-icon"><Gamepad2 size={18}/></span>
+-                    <span className="capsule-copy"><b>{profile.name}</b><small>{profile.versionId} · {profile.loader}</small></span>
+-                    {profile.autoOptimized && <span className="boost-badge"><Zap size={11}/> boost</span>}
+-                  </button>
+-                ))}
++              <div className="client-status-card panel-glass">
++                <div className="client-status-head"><span className="micro-label">CLIENT</span><b>{progress}%</b></div>
++                <div className="pulse-bar"><span style={{width: `${progress}%`}} /></div>
++                <small>{progress === 100 ? 'Ready' : status}</small>
+               </div>
+-            </div>
+ 
+-            <div className="discover-card panel-glass">
+-              <div className="section-head-new"><div><span className="micro-label">AXOLOT DISCOVER</span><h2>Fresh drops</h2></div></div>
+-              <div className="discover-list">
+-                <article><span className="discover-art art-1"><Sparkles size={24}/></span><div><b>Nebula Interface</b><small>Cinematic launcher identity • v0.8</small></div></article>
+-                <article><span className="discover-art art-2"><Cpu size={24}/></span><div><b>AutoBoost profiles</b><small>Sodium stack on Fabric profiles</small></div></article>
+-                <article><span className="discover-art art-3"><MessageCircle size={24}/></span><div><b>Axolot Social</b><small>Friends & chat concept coming later</small></div></article>
++              <div className="home-actions panel-glass">
++                <button onClick={() => setPage('profiles')}><Boxes size={21}/><span>Profiles</span></button>
++                <button onClick={() => activeProfile && openModLibrary(activeProfile, 'installed')}><Package size={21}/><span>Mods</span></button>
++                <button onClick={() => activeProfile && openModLibrary(activeProfile, 'modpacks')}><FileArchive size={21}/><span>Modpacks</span></button>
++                <button onClick={showGameConsole}><Terminal size={21}/><span>Console</span></button>
+               </div>
+-            </div>
++
++              <button className="home-settings panel-glass" onClick={() => setPage('settings')}><Settings size={19}/><span>Settings</span><ChevronRight size={17}/></button>
++            </aside>
+           </section>
+         )}
+ 
+@@ -1541,7 +1563,7 @@
+           <div className="boot-radar" aria-hidden="true"><span/><b/><i/></div>
+           <div className="boot-core">
+             <div className="boot-axo"><span>A</span><i/><b/></div>
+-            <span className="micro-label">AXOLOT NEBULA 0.12.3</span>
++            <span className="micro-label">AXOLOT NEBULA 0.12.4</span>
+             <h2>Waking the lagoon...</h2>
+             <p>{bootMessage}</p>
+             <div className="boot-line"><span style={{width:`${bootPercent}%`}}/></div>
+@@ -1559,7 +1581,7 @@
+               <div><span className="micro-label">AXOLOT UPDATE CHANNEL</span><h2>Axolot {updateStatus.latest_version} is ready</h2></div>
+               {!updateStatus.mandatory && !updatingLauncher && <button className="update-close" onClick={()=>{sessionStorage.setItem('axolot.dismissedUpdateVersion', updateStatus.latest_version);setUpdatePromptOpen(false);}}><X size={16}/></button>}
+             </div>
+-            <p className="update-lead">A new Axolot Client release was found automatically. You do not need to scan or download another installer from the website.</p>
++            <p className="update-lead">Axolot found a newer build. Automatic mode downloads it inside the launcher, verifies SHA-256, starts the installer, then closes this version.</p>
+             <div className="update-version-rail"><span><small>INSTALLED</small><b>v{updateStatus.current_version}</b></span><i><ChevronRight size={16}/></i><span className="next"><small>AVAILABLE</small><b>v{updateStatus.latest_version}</b></span></div>
+             <div className="update-notes"><span className="micro-label">WHAT'S NEW</span><p>{updateStatus.notes || 'Performance, stability and launcher experience improvements.'}</p></div>
+             <div className="update-trust"><ShieldCheck size={15}/><span>Installer is downloaded inside Axolot and verified against the release SHA-256 before installation.</span></div>
+@@ -1567,7 +1589,7 @@
+               <button className="update-now" onClick={installUpdateNow} disabled={updatingLauncher}><Download size={16}/>{updatingLauncher ? 'Downloading & verifying…' : 'Update now'}</button>
+               {!updateStatus.mandatory && <button disabled={updatingLauncher} onClick={()=>{sessionStorage.setItem('axolot.dismissedUpdateVersion', updateStatus.latest_version);setUpdatePromptOpen(false);}}>Later</button>}
+             </div>
+-            <small className="update-foot">Automatic update alerts are enabled. Axolot checks again when the app regains focus and every 10 minutes while open.</small>
++            <small className="update-foot">Hands-free updates are enabled by default. While Minecraft is running, Axolot defers installation until it is safe to update.</small>
+           </div>
+         </div>
+       )}
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=target' /mnt/data/axolot_orig/axolot-v0123-work/src/styles.css /mnt/data/axolot_src/axolot-v0123-work/src/styles.css
+--- /mnt/data/axolot_orig/axolot-v0123-work/src/styles.css	2026-10-07 09:33:52.000000000 +0000
++++ /mnt/data/axolot_src/axolot-v0123-work/src/styles.css	2026-10-07 10:29:10.554113286 +0000
+@@ -426,4 +426,39 @@
+ 
+ /* v0.12.2 — Multi Identity Vault */
+ .account-filter-bar{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 18px}.account-filter-bar button{border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.025);color:#9fb8b6;border-radius:999px;padding:8px 12px;font-size:11px;font-weight:800;cursor:pointer;transition:.18s ease}.account-filter-bar button:hover,.account-filter-bar button.active{color:#eafffb;border-color:rgba(105,236,219,.25);background:rgba(105,236,219,.085);transform:translateY(-1px)}.account-filter-bar button span{margin-left:6px;padding:2px 7px;border-radius:999px;background:rgba(255,255,255,.05);font-size:9px}.account-library-head small{display:block;margin-top:4px;color:#668c8a;font-size:10px}.session-dot{margin-left:auto;border:1px solid rgba(255,255,255,.07);border-radius:999px;padding:4px 7px;font-size:8px;letter-spacing:.1em;font-weight:900}.session-dot.ready{color:#78f1b3;border-color:rgba(120,241,179,.2);background:rgba(120,241,179,.06)}.session-dot.checking{color:#8edff4;border-color:rgba(142,223,244,.2);background:rgba(142,223,244,.06);animation:accountPulse 1.2s ease-in-out infinite}.session-dot.reauth{color:#ffd18d;border-color:rgba(255,209,141,.18);background:rgba(255,209,141,.055)}@keyframes accountPulse{50%{opacity:.45}}.bulk-account-field{margin-top:14px}.bulk-account-field textarea{width:100%;min-height:90px;resize:vertical;border:1px solid rgba(255,255,255,.08);background:rgba(3,14,16,.72);color:#eafffb;border-radius:14px;padding:12px 13px;outline:none;font:inherit;line-height:1.45}.bulk-account-field textarea:focus{border-color:rgba(105,236,219,.32);box-shadow:0 0 0 3px rgba(105,236,219,.06)}.bulk-account-field small{display:block;margin-top:6px;color:#638582;font-size:9px}.secondary-account-action{width:100%;min-height:41px;margin-top:9px;border-radius:13px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.035);color:#bdd1cf;display:flex;align-items:center;justify-content:center;gap:7px;font-weight:800;cursor:pointer;transition:.18s ease}.secondary-account-action:hover{transform:translateY(-1px);border-color:rgba(105,236,219,.22);background:rgba(105,236,219,.06);color:#eafffb}.account-card-new.microsoft-restored{box-shadow:inset 0 0 0 1px rgba(120,241,179,.08)}
+-\n\n/* v0.12.3 automatic update surface */\n.update-available-chip{height:38px;padding:0 12px;border-radius:13px;border:1px solid rgba(117,242,221,.22);background:linear-gradient(135deg,rgba(90,229,211,.12),rgba(146,119,255,.12));color:#d9fff8;display:flex;align-items:center;gap:7px;cursor:pointer;box-shadow:0 0 28px rgba(90,229,211,.07);animation:updateChipPulse 2.8s ease-in-out infinite}.update-available-chip span{font-size:10px;color:#8fa9ab}.update-available-chip b{font-size:10px;color:#dffef8}.update-overlay{position:fixed;inset:0;z-index:365;background:rgba(1,5,8,.76);backdrop-filter:blur(20px) saturate(125%);display:grid;place-items:center;padding:24px}.update-dialog{position:relative;overflow:hidden;width:min(560px,94vw);border-radius:28px;padding:27px;border-color:rgba(117,242,221,.20);box-shadow:0 48px 150px rgba(0,0,0,.56),0 0 80px rgba(98,225,211,.07);animation:updateDialogIn .42s cubic-bezier(.2,.85,.2,1) both}.update-radiance{position:absolute;inset:0;pointer-events:none;overflow:hidden}.update-radiance i{position:absolute;border-radius:50%;filter:blur(1px);opacity:.34}.update-radiance i:nth-child(1){width:260px;height:260px;right:-100px;top:-150px;background:radial-gradient(circle,rgba(108,238,220,.26),transparent 68%);animation:updateOrb 5.5s ease-in-out infinite}.update-radiance i:nth-child(2){width:220px;height:220px;left:-110px;bottom:-130px;background:radial-gradient(circle,rgba(161,125,255,.22),transparent 68%);animation:updateOrb 6.7s ease-in-out infinite reverse}.update-radiance i:nth-child(3){width:120px;height:120px;left:48%;top:20%;border:1px solid rgba(117,242,221,.09);animation:portalSpin 10s linear infinite}.update-head{position:relative;display:flex;align-items:center;gap:13px}.update-head h2{font-size:24px;margin:3px 0 0}.update-glyph{width:48px;height:48px;border-radius:15px;display:grid;place-items:center;color:#d9fff8;background:linear-gradient(145deg,rgba(102,232,220,.15),rgba(151,119,255,.15));border:1px solid rgba(117,242,221,.15)}.update-close{margin-left:auto;width:36px;height:36px;border-radius:11px;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.03);color:#8fa5a9;display:grid;place-items:center;cursor:pointer}.update-lead{position:relative;color:#93aaad;font-size:12px;line-height:1.65;margin:17px 0}.update-version-rail{position:relative;display:grid;grid-template-columns:1fr 36px 1fr;align-items:center;gap:8px;padding:13px;border-radius:17px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.055)}.update-version-rail>span{display:flex;flex-direction:column;gap:3px;padding:4px 8px}.update-version-rail small{font-size:8px;letter-spacing:.14em;color:#66868a}.update-version-rail b{font-size:16px}.update-version-rail i{display:grid;place-items:center;color:#657f83}.update-version-rail .next{border-radius:12px;background:linear-gradient(135deg,rgba(101,232,217,.08),rgba(153,120,255,.08))}.update-version-rail .next b{color:#cffff7}.update-notes{position:relative;margin-top:12px;padding:15px 16px;border-radius:17px;border:1px solid rgba(117,242,221,.10);background:rgba(6,20,24,.56)}.update-notes p{font-size:11px;color:#9bb0b3;line-height:1.65;margin:7px 0 0}.update-trust{position:relative;display:flex;align-items:flex-start;gap:8px;margin:13px 2px;color:#769397;font-size:10px;line-height:1.5}.update-trust svg{color:#6ce8d6;flex:none;margin-top:1px}.update-actions{position:relative;display:grid;grid-template-columns:1.45fr .75fr;gap:9px;margin-top:16px}.update-actions button{height:44px;border-radius:13px;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.035);color:#afc1c4;font-weight:800;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer}.update-actions .update-now{border:0;color:#061316;background:linear-gradient(90deg,#69eadb,#7fcff2,#a68df5);box-shadow:0 12px 34px rgba(103,232,218,.14)}.update-actions button:disabled{opacity:.58;cursor:default}.update-foot{position:relative;display:block;margin-top:12px;color:#58777b;font-size:8px;text-align:center;line-height:1.45}@keyframes updateDialogIn{from{opacity:0;transform:translateY(16px) scale(.97)}to{opacity:1;transform:none}}@keyframes updateChipPulse{50%{box-shadow:0 0 38px rgba(91,231,211,.16);border-color:rgba(117,242,221,.34)}}@keyframes updateOrb{50%{transform:translate3d(10px,-8px,0) scale(1.07)}}@media(max-width:720px){.update-available-chip span{display:none}.update-dialog{padding:21px}.update-version-rail{grid-template-columns:1fr 28px 1fr}.update-actions{grid-template-columns:1fr}.update-head h2{font-size:20px}}@media(prefers-reduced-motion:reduce){.update-available-chip,.update-dialog,.update-radiance i{animation:none!important}}\n
+\ No newline at end of file
++\n\n/* v0.12.3 automatic update surface */\n.update-available-chip{height:38px;padding:0 12px;border-radius:13px;border:1px solid rgba(117,242,221,.22);background:linear-gradient(135deg,rgba(90,229,211,.12),rgba(146,119,255,.12));color:#d9fff8;display:flex;align-items:center;gap:7px;cursor:pointer;box-shadow:0 0 28px rgba(90,229,211,.07);animation:updateChipPulse 2.8s ease-in-out infinite}.update-available-chip span{font-size:10px;color:#8fa9ab}.update-available-chip b{font-size:10px;color:#dffef8}.update-overlay{position:fixed;inset:0;z-index:365;background:rgba(1,5,8,.76);backdrop-filter:blur(20px) saturate(125%);display:grid;place-items:center;padding:24px}.update-dialog{position:relative;overflow:hidden;width:min(560px,94vw);border-radius:28px;padding:27px;border-color:rgba(117,242,221,.20);box-shadow:0 48px 150px rgba(0,0,0,.56),0 0 80px rgba(98,225,211,.07);animation:updateDialogIn .42s cubic-bezier(.2,.85,.2,1) both}.update-radiance{position:absolute;inset:0;pointer-events:none;overflow:hidden}.update-radiance i{position:absolute;border-radius:50%;filter:blur(1px);opacity:.34}.update-radiance i:nth-child(1){width:260px;height:260px;right:-100px;top:-150px;background:radial-gradient(circle,rgba(108,238,220,.26),transparent 68%);animation:updateOrb 5.5s ease-in-out infinite}.update-radiance i:nth-child(2){width:220px;height:220px;left:-110px;bottom:-130px;background:radial-gradient(circle,rgba(161,125,255,.22),transparent 68%);animation:updateOrb 6.7s ease-in-out infinite reverse}.update-radiance i:nth-child(3){width:120px;height:120px;left:48%;top:20%;border:1px solid rgba(117,242,221,.09);animation:portalSpin 10s linear infinite}.update-head{position:relative;display:flex;align-items:center;gap:13px}.update-head h2{font-size:24px;margin:3px 0 0}.update-glyph{width:48px;height:48px;border-radius:15px;display:grid;place-items:center;color:#d9fff8;background:linear-gradient(145deg,rgba(102,232,220,.15),rgba(151,119,255,.15));border:1px solid rgba(117,242,221,.15)}.update-close{margin-left:auto;width:36px;height:36px;border-radius:11px;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.03);color:#8fa5a9;display:grid;place-items:center;cursor:pointer}.update-lead{position:relative;color:#93aaad;font-size:12px;line-height:1.65;margin:17px 0}.update-version-rail{position:relative;display:grid;grid-template-columns:1fr 36px 1fr;align-items:center;gap:8px;padding:13px;border-radius:17px;background:rgba(255,255,255,.025);border:1px solid rgba(255,255,255,.055)}.update-version-rail>span{display:flex;flex-direction:column;gap:3px;padding:4px 8px}.update-version-rail small{font-size:8px;letter-spacing:.14em;color:#66868a}.update-version-rail b{font-size:16px}.update-version-rail i{display:grid;place-items:center;color:#657f83}.update-version-rail .next{border-radius:12px;background:linear-gradient(135deg,rgba(101,232,217,.08),rgba(153,120,255,.08))}.update-version-rail .next b{color:#cffff7}.update-notes{position:relative;margin-top:12px;padding:15px 16px;border-radius:17px;border:1px solid rgba(117,242,221,.10);background:rgba(6,20,24,.56)}.update-notes p{font-size:11px;color:#9bb0b3;line-height:1.65;margin:7px 0 0}.update-trust{position:relative;display:flex;align-items:flex-start;gap:8px;margin:13px 2px;color:#769397;font-size:10px;line-height:1.5}.update-trust svg{color:#6ce8d6;flex:none;margin-top:1px}.update-actions{position:relative;display:grid;grid-template-columns:1.45fr .75fr;gap:9px;margin-top:16px}.update-actions button{height:44px;border-radius:13px;border:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.035);color:#afc1c4;font-weight:800;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer}.update-actions .update-now{border:0;color:#061316;background:linear-gradient(90deg,#69eadb,#7fcff2,#a68df5);box-shadow:0 12px 34px rgba(103,232,218,.14)}.update-actions button:disabled{opacity:.58;cursor:default}.update-foot{position:relative;display:block;margin-top:12px;color:#58777b;font-size:8px;text-align:center;line-height:1.45}@keyframes updateDialogIn{from{opacity:0;transform:translateY(16px) scale(.97)}to{opacity:1;transform:none}}@keyframes updateChipPulse{50%{box-shadow:0 0 38px rgba(91,231,211,.16);border-color:rgba(117,242,221,.34)}}@keyframes updateOrb{50%{transform:translate3d(10px,-8px,0) scale(1.07)}}@media(max-width:720px){.update-available-chip span{display:none}.update-dialog{padding:21px}.update-version-rail{grid-template-columns:1fr 28px 1fr}.update-actions{grid-template-columns:1fr}.update-head h2{font-size:20px}}@media(prefers-reduced-motion:reduce){.update-available-chip,.update-dialog,.update-radiance i{animation:none!important}}\n
++/* =========================================================
++   AXOLOT 0.12.4 — FIXED DESKTOP SHELL
++   Whole launcher stays still. Only content-heavy sub-pages
++   scroll inside their own viewports.
++   ========================================================= */
++html,body,#root{width:100%;height:100%;overflow:hidden!important}
++body{margin:0}
++.axo-app{width:100vw;height:100vh;min-height:0!important;overflow:hidden!important}
++.axo-topbar{position:relative!important;z-index:50!important;height:76px!important;margin:10px 14px 0!important;padding:0 18px!important;display:flex!important;align-items:center!important;gap:18px!important;border-radius:22px!important}
++.axo-brand{min-width:210px}.top-actions{margin-left:auto}.status-chip{display:none!important}.user-chip small{display:none!important}
++.top-nav{position:fixed!important;z-index:100!important;left:14px!important;top:98px!important;width:70px!important;height:calc(100vh - 116px)!important;padding:10px 8px!important;display:flex!important;flex-direction:column!important;justify-content:flex-start!important;gap:9px!important;border:1px solid rgba(136,248,230,.10)!important;border-radius:26px!important;background:linear-gradient(180deg,rgba(8,16,26,.94),rgba(7,13,24,.82))!important;backdrop-filter:blur(28px)!important;box-shadow:0 20px 70px rgba(0,0,0,.34),inset 0 1px rgba(255,255,255,.04)!important}
++.top-nav button{width:52px!important;height:52px!important;min-width:52px!important;display:grid!important;place-items:center!important;padding:0!important;border-radius:17px!important}.top-nav button span{display:none!important}.top-nav button svg{width:20px;height:20px}.top-nav button.active{background:linear-gradient(135deg,rgba(105,246,226,.95),rgba(176,112,255,.94))!important;color:#071015!important;box-shadow:0 8px 30px rgba(112,226,255,.24),0 8px 34px rgba(192,98,255,.18)!important}.top-nav button:before,.top-nav button:after{display:none!important}
++.axo-workspace{position:relative!important;height:calc(100vh - 96px)!important;min-height:0!important;max-width:none!important;margin:0 0 0 96px!important;padding:12px 18px 18px 8px!important;overflow:hidden!important}
++.axo-home-fixed{height:100%;min-height:0;display:grid;grid-template-columns:minmax(620px,1fr) minmax(310px,360px);gap:16px;animation:none!important}
++.axo-home-main{min-width:0;min-height:0;display:grid;grid-template-rows:minmax(390px,1.6fr) minmax(205px,.72fr);gap:16px}
++.axo-stage{position:relative;overflow:hidden;min-height:0;border-radius:28px;background:radial-gradient(circle at 57% 42%,rgba(76,242,221,.13),transparent 27%),radial-gradient(circle at 88% 12%,rgba(138,103,255,.13),transparent 32%),linear-gradient(135deg,rgba(6,20,25,.96),rgba(10,17,32,.93))}
++.axo-stage:before{content:"";position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(rgba(113,239,222,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(113,239,222,.025) 1px,transparent 1px);background-size:36px 36px;mask-image:linear-gradient(to bottom,rgba(0,0,0,.72),transparent)}
++.axo-stage:after{content:"";position:absolute;left:10%;right:8%;bottom:-26%;height:56%;border-radius:50%;background:radial-gradient(ellipse,rgba(102,221,255,.13),rgba(184,104,255,.09) 42%,transparent 70%);filter:blur(16px);pointer-events:none}
++.axo-stage-head{position:relative;z-index:4;display:flex;justify-content:space-between;align-items:flex-start;padding:24px 26px}.axo-stage-head h2{margin:5px 0 1px;font-size:25px}.axo-stage-head small{color:var(--muted)}
++.stage-state{display:flex;align-items:center;gap:7px;padding:8px 11px;border:1px solid rgba(255,255,255,.07);border-radius:100px;background:rgba(5,12,18,.54);font-size:12px}.stage-state i{width:7px;height:7px;border-radius:50%;background:#56f2aa;box-shadow:0 0 14px #56f2aa}.stage-state.game-crashed i{background:#ff7f8f;box-shadow:0 0 14px #ff7f8f}
++.axo-stage-visual{position:absolute;inset:58px 0 82px;display:grid;place-items:center}.axo-stage-glow{position:absolute;width:min(430px,55vh);height:min(430px,55vh);border-radius:50%;background:radial-gradient(circle,rgba(91,243,222,.12),rgba(118,132,255,.08) 42%,transparent 70%);filter:blur(8px)}.axo-portal-home{position:relative!important;width:min(370px,44vh)!important;height:min(370px,44vh)!important;right:auto!important;top:auto!important;transform:none!important}.axo-portal-home .ring-outer{width:100%;height:100%}.axo-portal-home .ring-mid{width:79%;height:79%}.axo-portal-home .ring-inner{width:62%;height:62%}
++.axo-stage-control{position:absolute;z-index:6;left:20px;right:20px;bottom:18px;height:72px;display:flex;align-items:center;gap:12px;padding:10px;border:1px solid rgba(143,248,231,.12);border-radius:21px;background:rgba(5,12,23,.82);backdrop-filter:blur(20px);box-shadow:0 15px 45px rgba(0,0,0,.30),inset 0 1px rgba(255,255,255,.035)}
++.stage-profile-icon{width:49px;height:49px;display:grid;place-items:center;border-radius:15px;color:#76f2df;background:linear-gradient(135deg,rgba(83,244,218,.14),rgba(110,170,255,.10))}.stage-profile-info{min-width:0;display:flex;flex-direction:column;flex:1}.stage-profile-info b{font-size:15px}.stage-profile-info small{margin-top:3px;color:var(--muted)}
++.stage-small-action{width:48px;height:48px;display:grid;place-items:center;padding:0;border-radius:15px;border:1px solid rgba(255,255,255,.08);color:#ccece7;background:rgba(255,255,255,.025);cursor:pointer}.stage-launch{width:154px;height:52px;display:grid;place-items:center;border:0;border-radius:17px;color:#07101a;background:linear-gradient(105deg,#63f2df,#66caf7 50%,#d377ff);box-shadow:0 10px 34px rgba(83,230,224,.22),0 9px 36px rgba(182,104,255,.20);cursor:pointer;transition:transform .18s ease,filter .18s ease}.stage-launch:hover:not(:disabled){transform:translateY(-2px) scale(1.015);filter:brightness(1.08)}.stage-launch:disabled{opacity:.6}
++.home-library{min-height:0;overflow:hidden;display:flex;flex-direction:column;padding:10px;border-radius:25px}.home-library-tabs{display:flex;gap:6px;padding-bottom:9px;border-bottom:1px solid rgba(255,255,255,.055)}.home-library-tabs button{min-height:38px;display:flex;align-items:center;gap:8px;padding:0 15px;border:0;border-radius:13px;color:var(--muted);background:transparent;cursor:pointer}.home-library-tabs button.active{color:#eafffb;background:linear-gradient(135deg,rgba(68,239,219,.12),rgba(168,99,255,.14));box-shadow:inset 0 0 0 1px rgba(117,244,224,.14)}.home-library-tabs .library-new{margin-left:auto;width:40px;padding:0;justify-content:center}
++.home-profile-list{flex:1;min-height:0;padding-top:8px;overflow-y:auto;overscroll-behavior:contain}.home-profile-list::-webkit-scrollbar{width:5px}.home-profile-list::-webkit-scrollbar-thumb{border-radius:20px;background:rgba(113,235,221,.28)}.home-profile-row{min-height:53px;display:flex;align-items:center;gap:11px;margin-bottom:6px;padding:6px 8px;border:1px solid transparent;border-radius:15px;background:rgba(255,255,255,.018);cursor:pointer}.home-profile-row.active{border-color:rgba(90,243,216,.11);background:rgba(74,232,208,.045)}.home-profile-thumb{width:39px;height:39px;display:grid;place-items:center;border-radius:11px;color:#78f3e0;background:rgba(91,239,217,.08)}.home-profile-copy{min-width:0;flex:1;display:flex;flex-direction:column}.home-profile-copy b{font-size:13px}.home-profile-copy small{margin-top:2px;color:var(--muted);font-size:11px}.home-boost{display:flex;align-items:center;gap:4px;padding:4px 7px;border-radius:9px;color:#80f0da;background:rgba(76,229,199,.07);font-size:9px;text-transform:uppercase}.home-row-play{width:39px;height:36px;display:grid;place-items:center;border-radius:11px;border:1px solid rgba(99,242,220,.14);color:#6ef2dd;background:rgba(79,225,203,.035);cursor:pointer}
++.axo-home-side{min-width:0;min-height:0;display:flex;flex-direction:column;gap:13px}.home-account{min-height:84px;display:grid;grid-template-columns:52px 1fr 22px;align-items:center;gap:11px;padding:13px 15px;text-align:left;color:inherit;border-radius:23px;cursor:pointer}.home-account-avatar{width:48px;height:48px;display:grid;place-items:center;border-radius:50%;color:#041315;background:linear-gradient(135deg,#66f1dd,#7aafff,#df83ff)}.home-account>span:nth-child(2){display:flex;flex-direction:column}.home-account b{font-size:14px}.home-account small{margin-top:3px;color:var(--muted)}
++.system-mini{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:10px;border-radius:23px}.system-mini>div{min-width:0;height:92px;display:flex;flex-direction:column;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.055);border-radius:17px;background:rgba(255,255,255,.018)}.system-mini svg{margin-bottom:8px;color:#6ceada}.system-mini b{font-size:14px}.system-mini small{margin-top:2px;color:var(--muted);font-size:10px}
++.client-status-card{padding:17px 18px;border-radius:23px}.client-status-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}.client-status-head b{font-size:11px;color:#dffef8}.client-status-card>small{display:block;margin-top:7px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:10px}
++.home-actions{min-height:0;flex:1;display:grid;grid-template-columns:1fr 1fr;gap:9px;padding:10px;border-radius:23px}.home-actions button{min-height:72px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:7px;border:1px solid rgba(255,255,255,.055);border-radius:17px;color:#d9efeb;background:rgba(255,255,255,.018);cursor:pointer}.home-actions button:hover{border-color:rgba(94,241,216,.15);background:rgba(78,235,211,.045)}.home-actions button span{font-size:11px}.home-settings{min-height:56px;display:flex;align-items:center;gap:10px;padding:0 16px;border-radius:19px;color:#d8ece9;cursor:pointer}.home-settings span{flex:1;text-align:left}
++.profiles-new,.creator-shell,.library-shell,.accounts-page,.settings-new,.simple-page{height:100%;min-height:0;overflow-y:auto!important;overflow-x:hidden;padding-right:6px;overscroll-behavior:contain}.profiles-new::-webkit-scrollbar,.creator-shell::-webkit-scrollbar,.library-shell::-webkit-scrollbar,.accounts-page::-webkit-scrollbar,.settings-new::-webkit-scrollbar,.simple-page::-webkit-scrollbar{width:6px}.profiles-new::-webkit-scrollbar-thumb,.creator-shell::-webkit-scrollbar-thumb,.library-shell::-webkit-scrollbar-thumb,.accounts-page::-webkit-scrollbar-thumb,.settings-new::-webkit-scrollbar-thumb,.simple-page::-webkit-scrollbar-thumb{border-radius:20px;background:rgba(113,236,220,.24)}
++@media(max-width:1180px){.axo-home-fixed{grid-template-columns:minmax(560px,1fr) 300px}.stage-launch{width:115px}.system-mini>div{height:82px}.axo-brand{min-width:180px}.user-chip{max-width:180px}}
++@media(max-height:760px){.axo-home-main{grid-template-rows:minmax(345px,1.55fr) minmax(170px,.65fr)}.system-mini>div{height:72px}.home-actions button{min-height:58px}.axo-stage-head{padding:18px 22px}.axo-stage-control{bottom:14px}.axo-portal-home{width:min(315px,41vh)!important;height:min(315px,41vh)!important}}
++
++.axo-brand:after{display:none!important}
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=target' /mnt/data/axolot_orig/axolot-v0123-work/src-tauri/Cargo.toml /mnt/data/axolot_src/axolot-v0123-work/src-tauri/Cargo.toml
+--- /mnt/data/axolot_orig/axolot-v0123-work/src-tauri/Cargo.toml	2026-10-07 09:33:52.000000000 +0000
++++ /mnt/data/axolot_src/axolot-v0123-work/src-tauri/Cargo.toml	2026-10-07 10:27:19.198178589 +0000
+@@ -1,6 +1,6 @@
+ [package]
+ name = "axolot-client"
+-version = "0.12.3"
++version = "0.12.4"
+ description = "Axolot Client Minecraft launcher"
+ authors = ["Axolot Client"]
+ edition = "2021"
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=target' /mnt/data/axolot_orig/axolot-v0123-work/src-tauri/src/lib.rs /mnt/data/axolot_src/axolot-v0123-work/src-tauri/src/lib.rs
+--- /mnt/data/axolot_orig/axolot-v0123-work/src-tauri/src/lib.rs	2026-10-07 08:36:10.000000000 +0000
++++ /mnt/data/axolot_src/axolot-v0123-work/src-tauri/src/lib.rs	2026-10-07 10:29:10.553784583 +0000
+@@ -318,7 +318,7 @@
+ }
+ 
+ const AXOLOT_CORE_BYTES: &[u8] = include_bytes!("../resources/axolot-client-core.jar");
+-const USER_AGENT: &str = "AxolotClient/0.11.1 (+https://axolot.local)";
++const USER_AGENT: &str = "AxolotClient/0.12.4 (+https://axolot.local)";
+ const AXOLOT_CURSEFORGE_PROXY: &str = "https://rlbgvgosxrhqnppbrtey.supabase.co/functions/v1/axolot-curseforge";
+ 
+ fn emit_progress(app: &tauri::AppHandle, stage: &str, message: impl Into<String>, percent: u8) {
+diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=target' /mnt/data/axolot_orig/axolot-v0123-work/src-tauri/tauri.conf.json /mnt/data/axolot_src/axolot-v0123-work/src-tauri/tauri.conf.json
+--- /mnt/data/axolot_orig/axolot-v0123-work/src-tauri/tauri.conf.json	2026-10-07 09:33:52.000000000 +0000
++++ /mnt/data/axolot_src/axolot-v0123-work/src-tauri/tauri.conf.json	2026-10-07 10:27:19.198217988 +0000
+@@ -1,7 +1,7 @@
+ {
+   "$schema": "https://schema.tauri.app/config/2",
+   "productName": "Axolot Client",
+-  "version": "0.12.3",
++  "version": "0.12.4",
+   "identifier": "gg.axolot.client",
+   "build": {
+     "beforeDevCommand": "npm run dev",
+@@ -12,7 +12,7 @@
+   "app": {
+     "windows": [
+       {
+-        "title": "Axolot Client \u2014 Release Candidate 0.12.3",
++        "title": "Axolot Client \u2014 Release Candidate 0.12.4",
+         "width": 1360,
+         "height": 820,
+         "minWidth": 1080,
