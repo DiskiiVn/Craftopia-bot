@@ -86,7 +86,7 @@ jobs:
             mandatory = $false
           } | ConvertTo-Json -Depth 5
           Set-Content -Path "axolot-v0123-build/axolot-update.json" -Value $manifest -Encoding UTF8
-          Compress-Archive -Path "axolot-v0123-build/source/*" -DestinationPath "axolot-v0123-build/Axolot-Client-v0.12.3-Source.zip" -Force
+          Remove-Item -Recurse -Force "axolot-v0123-build/source/node_modules" -ErrorAction SilentlyContinue\n          Remove-Item -Recurse -Force "axolot-v0123-build/source/dist" -ErrorAction SilentlyContinue\n          Remove-Item -Recurse -Force "axolot-v0123-build/source/src-tauri/target" -ErrorAction SilentlyContinue\n          Compress-Archive -Path "axolot-v0123-build/source/*" -DestinationPath "axolot-v0123-build/Axolot-Client-v0.12.3-Source.zip" -Force
           Write-Host "Installer SHA256: $exeSha"
 
       - name: Upload workflow artifact
@@ -103,8 +103,8 @@ jobs:
       - name: Publish GitHub Release
         shell: pwsh
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete axolot-v0.12.3 --repo "\${{ github.repository }}" --yes 2>$null
+          gh release delete axolot-v0.12.3 --repo "${{ github.repository }}" --yes 2>$null
           git push origin :refs/tags/axolot-v0.12.3 2>$null
-          gh release create axolot-v0.12.3 "axolot-v0123-build/Axolot-Client-Setup-0.12.3-RC.exe" "axolot-v0123-build/axolot-update.json" "axolot-v0123-build/Axolot-Client-v0.12.3-Source.zip" --repo "\${{ github.repository }}" --title "Axolot Client v0.12.3 RC" --notes "Automatic update UI release. Axolot now discovers releases without manual scanning and surfaces a cinematic update prompt automatically at startup, on focus and during periodic background checks."
+          gh release create axolot-v0.12.3 "axolot-v0123-build/Axolot-Client-Setup-0.12.3-RC.exe" "axolot-v0123-build/axolot-update.json" "axolot-v0123-build/Axolot-Client-v0.12.3-Source.zip" --repo "${{ github.repository }}" --title "Axolot Client v0.12.3 RC" --notes "Automatic update UI release. Axolot now discovers releases without manual scanning and surfaces a cinematic update prompt automatically at startup, on focus and during periodic background checks."
