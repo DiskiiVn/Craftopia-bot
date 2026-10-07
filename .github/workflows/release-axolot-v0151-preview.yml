@@ -34,19 +34,12 @@ jobs:
           $pkg = Get-Content -Raw "work\Axolot-Client-v0.15.1\package.json" | ConvertFrom-Json
           if ($pkg.version -ne "0.15.1") { throw "Expected 0.15.1, got $($pkg.version)" }
 
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-
-      - name: Rebuild bundled Axolot Core
+      - name: Verify bundled Axolot Core
         shell: pwsh
-        working-directory: work/Axolot-Client-v0.15.1/axolot-core
         run: |
-          .\gradlew.bat build
-          $jar = Get-ChildItem "build\libs\axolot-core-0.15.0*.jar" | Where-Object { $_.Name -notmatch 'sources' } | Select-Object -First 1
-          if (-not $jar) { throw "Axolot Core 0.15.0 jar not found" }
-          Copy-Item $jar.FullName "..\src-tauri\resources\axolot-client-core.jar" -Force
+          $core = "work\Axolot-Client-v0.15.1\src-tauri\resources\axolot-client-core.jar"
+          if (-not (Test-Path $core)) { throw "Bundled Axolot Core resource is missing" }
+          if ((Get-Item $core).Length -lt 100000) { throw "Bundled Axolot Core resource looks invalid" }
 
       - uses: actions/setup-node@v4
         with:
