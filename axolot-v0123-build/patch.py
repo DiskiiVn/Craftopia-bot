@@ -32,14 +32,14 @@ replace_in(
     """        setUpdateStatus(update);
         if (update.available && autoInstallUpdates) {
           setBootPercent(76);
-          setBootMessage(\`Updating Axolot Client to \${update.latest_version}...\`);
+          setBootMessage(`Updating Axolot Client to ${update.latest_version}...`);
           setUpdatingLauncher(true);
           await invoke<string>('install_launcher_update', { downloadUrl: update.download_url, sha256: update.sha256 });
           return;
         }""",
     """        setUpdateStatus(update);
         if (update.available) {
-          setBootMessage(\`Axolot \${update.latest_version} is ready to install.\`);
+          setBootMessage(`Axolot ${update.latest_version} is ready to install.`);
           const dismissed = sessionStorage.getItem('axolot.dismissedUpdateVersion');
           if (dismissed !== update.latest_version) setUpdatePromptOpen(true);
         }"""
@@ -90,39 +90,39 @@ replace_in(
 replace_in(
     "src/main.tsx",
     """      setUpdateStatus(next);
-      setStatus(next.available ? \`Axolot \${next.latest_version} is available.\` : \`Axolot \${next.current_version} is up to date.\`);""",
+      setStatus(next.available ? `Axolot ${next.latest_version} is available.` : `Axolot ${next.current_version} is up to date.`);""",
     """      setUpdateStatus(next);
       if (next.available) {
         sessionStorage.removeItem('axolot.dismissedUpdateVersion');
         setUpdatePromptOpen(true);
       }
-      setStatus(next.available ? \`Axolot \${next.latest_version} is available.\` : \`Axolot \${next.current_version} is up to date.\`);"""
+      setStatus(next.available ? `Axolot ${next.latest_version} is available.` : `Axolot ${next.current_version} is up to date.`);"""
 )
 
 replace_in(
     "src/main.tsx",
     """    setUpdatingLauncher(true);
-    setStatus(\`Downloading Axolot \${updateStatus.latest_version}...\`);""",
+    setStatus(`Downloading Axolot ${updateStatus.latest_version}...`);""",
     """    setUpdatingLauncher(true);
     setUpdatePromptOpen(true);
-    setStatus(\`Downloading Axolot \${updateStatus.latest_version}...\`);"""
+    setStatus(`Downloading Axolot ${updateStatus.latest_version}...`);"""
 )
 
 # Persistent topbar indicator.
 replace_in(
     "src/main.tsx",
     """        <div className="top-actions">
-          <button className={\`status-chip game-\${gameStatus?.state || 'stopped'}\`}""",
+          <button className={`status-chip game-${gameStatus?.state || 'stopped'}`}""",
     """        <div className="top-actions">
           {updateStatus?.available && <button className="update-available-chip" onClick={()=>setUpdatePromptOpen(true)}><Download size={14}/><span>Update</span><b>v{updateStatus.latest_version}</b></button>}
-          <button className={\`status-chip game-\${gameStatus?.state || 'stopped'}\`}"""
+          <button className={`status-chip game-${gameStatus?.state || 'stopped'}`}"""
 )
 
 # Settings copy: automatic alert/check behavior.
 replace_in(
     "src/main.tsx",
-    """              <div className="setting-tile panel-glass update-setting"><span>Automatic updates</span><b>{updateStatus?.available ? \`v\${updateStatus.latest_version} available\` : 'Stable channel'}</b><label className="toggle-row"><input type="checkbox" checked={autoInstallUpdates} onChange={(e)=>setAutoInstallUpdates(e.target.checked)}/> Download and install updates automatically</label><div className="setting-actions"><button onClick={checkForUpdates}>Check now</button>{updateStatus?.available && <button className="accent-action" onClick={installUpdateNow} disabled={updatingLauncher}>{updatingLauncher ? 'Updating…' : 'Update now'}</button>}</div><small>Updates are downloaded in-app, SHA-256 verified, then installed silently. No new installer download is required from the user.</small></div>""",
-    """              <div className="setting-tile panel-glass update-setting"><span>Automatic update alerts</span><b>{updateStatus?.available ? \`v\${updateStatus.latest_version} available\` : 'Stable channel'}</b><label className="toggle-row"><input type="checkbox" checked={autoInstallUpdates} onChange={(e)=>setAutoInstallUpdates(e.target.checked)}/> Check automatically and show new releases on screen</label><div className="setting-actions"><button onClick={checkForUpdates}>Check now</button>{updateStatus?.available && <button className="accent-action" onClick={()=>setUpdatePromptOpen(true)}>View update</button>}</div><small>Axolot checks at startup and while the launcher is open. Updates are SHA-256 verified and installed in-app only after you press Update now.</small></div>"""
+    """              <div className="setting-tile panel-glass update-setting"><span>Automatic updates</span><b>{updateStatus?.available ? `v${updateStatus.latest_version} available` : 'Stable channel'}</b><label className="toggle-row"><input type="checkbox" checked={autoInstallUpdates} onChange={(e)=>setAutoInstallUpdates(e.target.checked)}/> Download and install updates automatically</label><div className="setting-actions"><button onClick={checkForUpdates}>Check now</button>{updateStatus?.available && <button className="accent-action" onClick={installUpdateNow} disabled={updatingLauncher}>{updatingLauncher ? 'Updating…' : 'Update now'}</button>}</div><small>Updates are downloaded in-app, SHA-256 verified, then installed silently. No new installer download is required from the user.</small></div>""",
+    """              <div className="setting-tile panel-glass update-setting"><span>Automatic update alerts</span><b>{updateStatus?.available ? `v${updateStatus.latest_version} available` : 'Stable channel'}</b><label className="toggle-row"><input type="checkbox" checked={autoInstallUpdates} onChange={(e)=>setAutoInstallUpdates(e.target.checked)}/> Check automatically and show new releases on screen</label><div className="setting-actions"><button onClick={checkForUpdates}>Check now</button>{updateStatus?.available && <button className="accent-action" onClick={()=>setUpdatePromptOpen(true)}>View update</button>}</div><small>Axolot checks at startup and while the launcher is open. Updates are SHA-256 verified and installed in-app only after you press Update now.</small></div>"""
 )
 
 # Update release modal before Microsoft overlay.
