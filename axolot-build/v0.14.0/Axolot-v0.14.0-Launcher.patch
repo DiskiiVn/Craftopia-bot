@@ -1,0 +1,1582 @@
+--- a/BUILD-RELEASE.md
++++ b/BUILD-RELEASE.md
+@@ -0,0 +1,9 @@
++# Build Axolot Client 0.14.0
++
++1. Start from the bundled `axolot-core` source or clone the original Fast Client source supplied for this project.
++2. Run `python scripts/prepare_axolot_core.py axolot-core`.
++3. Build Core with Java 21: `cd axolot-core && gradlew.bat build` on Windows.
++4. Copy `axolot-core/build/libs/axolot-core-0.14.0*.jar` to `src-tauri/resources/axolot-client-core.jar`.
++5. Run `npm install`, `npm run build`, then `npm run tauri build -- --bundles nsis`.
++
++The release workflow performs the same steps, verifies the full Core feature inventory, creates the NSIS installer, computes SHA-256 and publishes the updater manifest.
+--- a/README.md
++++ b/README.md
+@@ -1,6 +1,6 @@
+-# Axolot Client v0.10.1 Release Candidate
++# Axolot Client v0.14.0 Release Candidate
+ 
+-Premium Nebula UI release candidate.
++Desktop launcher + Axolot Core release candidate.
+ 
+ Highlights:
+ - Reworked Identity Vault / multi-account manager UI
+@@ -19,7 +19,7 @@
+ Axolot v0.11 uses Microsoft Device Code OAuth. Register Axolot as your own public/native Microsoft application, enable public client flows, and paste the application's Client ID in **Settings → Microsoft App Client ID**. The launcher never asks for a Microsoft password or client secret. The login chain is Microsoft OAuth → Xbox Live → XSTS → Minecraft Services → ownership/profile verification.
+ 
+ ### Automatic updates
+-Axolot checks `https://github.com/DiskiiVn/Craftopia-bot/releases/latest/download/axolot-update.json` at startup. The release workflow builds the NSIS installer, calculates SHA-256, publishes the installer + manifest to GitHub Releases, and the launcher downloads/verifies/installs the new version silently. Users do not need to manually download a new installer.
++Axolot checks the Supabase stable update channel at startup. The release workflow builds the NSIS installer, calculates SHA-256, publishes the installer + manifest to GitHub Releases, and the launcher downloads/verifies/installs the new version silently. Users do not need to manually download a new installer.
+ 
+ 
+ ## v0.12.0 cloud-managed configuration
+@@ -51,7 +51,7 @@
+ - The launcher does not reuse another launcher's Client ID and does not attempt to bypass Minecraft Services authorization.
+ 
+ 
+-## v0.12.4 Multi Identity Vault
++## v0.12.5 Multi Identity Vault
+ - Unlimited Offline/Crack identities with single-add and bulk-add support.
+ - Multiple Microsoft/Premium identities can coexist in the same launcher.
+ - Microsoft refresh tokens are stored in the OS credential vault via the Rust keyring backend, never in localStorage.
+@@ -61,10 +61,28 @@
+ - Minecraft AppID approval handling from v0.12.1 remains in place.
+ 
+ 
+-## v0.12.4 Fixed Desktop Shell + Hands-free Update
++## v0.12.5 Fixed Desktop Shell + Hands-free Update
+ - Play is now a fixed desktop dashboard: no full-window page scrolling and no marketing-style hero copy.
+ - Navigation is a compact icon rail on the left; only content-heavy views such as Profiles, Mods, Accounts and Settings scroll inside their own panels.
+ - The launch control is icon-first and no longer displays “Play Minecraft”.
+ - Automatic updates are enabled by default. On startup Axolot checks the signed release channel, downloads the NSIS installer internally, verifies SHA-256, starts the silent installer, then exits the old build.
+ - Background update checks run when the launcher regains focus and every 10 minutes. If Minecraft is currently running, Axolot defers installation instead of interrupting the session.
+ - GitHub Actions builds the Windows NSIS installer and publishes `axolot-update.json` automatically for `axolot-v*` tags.
++
++
++## v0.13.0 Fast-inspired unified client
++- Uses one consistent desktop geometry across Play, Profiles, Mods, Accounts, Client and Settings.
++- Sidebar expands on hover without shifting the app; the main window remains resizable/maximizable.
++- Adds a first-class Mods dashboard and Axolot Core dashboard instead of placeholder Partners/Store pages.
++- Axolot Core is built from the user-provided Fast Client source, visibly rebranded and recolored for the Axolot Nebula design system.
++- Core 0.13.0 targets Fabric 1.21.4 in this release; other profile versions are kept compatible by not injecting the Core JAR.
++- AutoBoost continues to install Sodium/Lithium/FerriteCore/ImmediatelyFast/EntityCulling and only adds Axolot Core when the profile is compatible.
++- Release builds compile Axolot Core first, embed the exact JAR into the launcher, build the NSIS installer, hash it and publish the update manifest.
++
++
++## v0.14.0 Nebula Prime
++- Dense desktop dashboard with much less empty space on every launcher page.
++- Full Fast Client-derived feature set is preserved in Axolot Core and verified at build time.
++- 51 modules/settings classes + music, profiles, resource-pack converter, browser, Discord RPC, Hypixel tools and HUD editor.
++- Axolot Core page now exposes the complete feature catalog by category.
++- Quick profile presets and improved responsive geometry for 1100px+ desktop windows.
+--- a/RELEASE-0.14.0.md
++++ b/RELEASE-0.14.0.md
+@@ -0,0 +1,16 @@
++# Axolot Client 0.14.0 RC — Nebula Prime
++
++## Launcher
++- Rebuilt the home screen into a denser desktop dashboard: active session, launch dock, quick commands, profile health, client pulse, account, Core and performance are visible without scrolling.
++- Reduced empty space throughout Profiles, Accounts, Mods and Settings while preserving internal scrolling for long lists.
++- Added quick profile presets for Performance, Clean Vanilla and Legacy PvP.
++- Axolot Core page now surfaces the complete inherited feature catalog instead of six generic cards.
++- Sidebar remains compact and expands over the workspace on hover, so page geometry never shifts.
++- Default window is larger and fully resizable/maximizable with lower minimum dimensions for common laptop screens.
++
++## Axolot Core 0.14.0
++- Keeps the complete Fast Client-derived feature set: 51 module/settings classes plus music, profiles, resource-pack conversion, embedded browser, Discord RPC, Hypixel integration and HUD editor.
++- Build-time verification fails if any expected Fast Client feature disappears.
++- Redesigned in-game home dashboard with dense module counts and category panels.
++- Preserves the Axolot cyan / blue / violet Material3 theme and Axolot branding.
++- Target remains Fabric + Minecraft 1.21.4 for this Core build; incompatible launcher profiles stay clean.
+--- a/package.json
++++ b/package.json
+@@ -1,7 +1,7 @@
+ {
+   "name": "axolot-client",
+   "private": true,
+-  "version": "0.12.4",
++  "version": "0.14.0",
+   "type": "module",
+   "scripts": {
+     "dev": "vite",
+--- a/scripts/prepare_axolot_core.py
++++ b/scripts/prepare_axolot_core.py
+@@ -0,0 +1,184 @@
++from __future__ import annotations
++from pathlib import Path
++import json
++import re
++import shutil
++import sys
++
++root = Path(sys.argv[1] if len(sys.argv) > 1 else "axolot-core").resolve()
++if not (root / "build.gradle").exists():
++    raise SystemExit(f"Fast Client source not found: {root}")
++
++assets = root / "src/main/resources/assets"
++if (assets / "fast").exists() and not (assets / "axolot").exists():
++    (assets / "fast").rename(assets / "axolot")
++for old, new in [("fast.mixins.json", "axolot.mixins.json"), ("fast.accesswidener", "axolot.accesswidener")]:
++    src = root / "src/main/resources" / old
++    dst = root / "src/main/resources" / new
++    if src.exists() and not dst.exists():
++        src.rename(dst)
++
++text_files = list(root.rglob("*.java")) + list(root.rglob("*.gradle")) + list(root.rglob("*.properties")) + list(root.rglob("*.json")) + list(root.rglob("*.md"))
++for path in text_files:
++    try:
++        text = path.read_text(encoding="utf-8")
++    except Exception:
++        continue
++    text = text.replace("/assets/fast/", "/assets/axolot/").replace("assets/fast/", "assets/axolot/")
++    text = text.replace("Fast Client", "Axolot Client").replace("FastClient", "AxolotCore")
++    text = text.replace("Performance & Utility Client", "Performance · HUD · Utility · Profiles")
++    path.write_text(text, encoding="utf-8")
++
++p = root / "build.gradle"
++s = p.read_text(encoding="utf-8").replace("src/main/resources/fast.accesswidener", "src/main/resources/axolot.accesswidener")
++p.write_text(s, encoding="utf-8")
++
++p = root / "gradle.properties"
++s = p.read_text(encoding="utf-8")
++s = re.sub(r"mod_version=.*", "mod_version=0.14.0", s)
++s = re.sub(r"maven_group=.*", "maven_group=gg.axolot", s)
++s = re.sub(r"archives_base_name=.*", "archives_base_name=axolot-core", s)
++p.write_text(s, encoding="utf-8")
++
++p = root / "src/main/resources/fabric.mod.json"
++d = json.loads(p.read_text(encoding="utf-8"))
++d.update({
++    "id": "axolotcore",
++    "name": "Axolot Core",
++    "description": "Axolot Client in-game core for performance, HUD, profiles, music and utility modules.",
++    "authors": ["Axolot Client Studio", "EldoDebug (Fast Client source)"],
++    "contact": {"homepage": "https://github.com/DiskiiVn/Craftopia-bot"},
++    "environment": "client",
++    "mixins": ["axolot.mixins.json"],
++    "accessWidener": "axolot.accesswidener",
++})
++p.write_text(json.dumps(d, indent=2) + "\n", encoding="utf-8")
++
++p = root / "src/main/java/com/fastclient/Fast.java"
++s = p.read_text(encoding="utf-8")
++s = s.replace('private final String name = "Fast";', 'private final String name = "Axolot";')
++s = re.sub(r'private final String version = "[^"]+";', 'private final String version = "0.14.0";', s)
++p.write_text(s, encoding="utf-8")
++
++
++p = root / "src/main/java/com/fastclient/logger/FastLogger.java"
++if p.exists():
++    t = p.read_text(encoding="utf-8").replace('LogManager.getLogger("Axolot Client")', 'LogManager.getLogger("Axolot Core")')
++    p.write_text(t, encoding="utf-8")
++
++p = root / "src/main/java/com/fastclient/libraries/material3/Material3.java"
++s = p.read_text(encoding="utf-8")
++s = re.sub(r'private static final double FASTCLIENT_HUE = [0-9.]+;', 'private static final double FASTCLIENT_HUE = 195.0;', s)
++s = re.sub(r'private static final double FASTCLIENT_CHROMA = [0-9.]+;', 'private static final double FASTCLIENT_CHROMA = 62.0;', s)
++s = re.sub(r'private static final double FASTCLIENT_TONE = [0-9.]+;', 'private static final double FASTCLIENT_TONE = 72.0;', s)
++s = re.sub(r'public static final int FASTCLIENT_ORANGE = 0x[0-9A-Fa-f]+;', 'public static final int FASTCLIENT_ORANGE = 0xFF67E8DD;', s)
++s = re.sub(r'public static final int FASTCLIENT_YELLOW = 0x[0-9A-Fa-f]+;', 'public static final int FASTCLIENT_YELLOW = 0xFFA882FF;', s)
++s = re.sub(r'public static final int FASTCLIENT_TEXT_ORANGE = 0x[0-9A-Fa-f]+;', 'public static final int FASTCLIENT_TEXT_ORANGE = 0xFF72D8FF;', s)
++s = re.sub(r'public static final int FASTCLIENT_HOVER = 0x[0-9A-Fa-f]+;', 'public static final int FASTCLIENT_HOVER = 0xFF10222D;', s)
++p.write_text(s, encoding="utf-8")
++
++p = root / "src/main/java/com/fastclient/gui/modmenu/GuiModMenu.java"
++s = p.read_text(encoding="utf-8")
++s = s.replace("new NavigationRail(this, getX(), getY(), 90, getHeight())", "new NavigationRail(this, getX(), getY(), 104, getHeight())")
++s = s.replace("return Math.max(600, Math.min(1200, targetWidth));", "return Math.max(720, Math.min(1320, targetWidth));")
++s = s.replace("return Math.max(400, Math.min(700, targetHeight));", "return Math.max(460, Math.min(760, targetHeight));")
++p.write_text(s, encoding="utf-8")
++
++home = '''package com.fastclient.gui.modmenu.pages;
++
++import com.fastclient.Fast;
++import com.fastclient.gui.api.Gui;
++import com.fastclient.gui.api.page.Page;
++import com.fastclient.gui.api.page.impl.RightLeftTransition;
++import com.fastclient.management.color.api.ColorPalette;
++import com.fastclient.skia.Skia;
++import com.fastclient.skia.font.Fonts;
++import com.fastclient.skia.font.Icon;
++import com.fastclient.utils.ColorUtils;
++
++public class HomePage extends Page {
++    public HomePage(Gui parent) { super(parent, "text.home", Icon.HOME, new RightLeftTransition(true)); }
++    @Override public void draw(double mouseX, double mouseY) {
++        super.draw(mouseX, mouseY);
++        ColorPalette palette = Fast.getInstance().getColorManager().getPalette();
++        float pad = 28, top = y + 24, left = x + pad, right = x + width - pad;
++        Skia.drawText("AXOLOT CORE · NEBULA 0.14", left, top + 5, palette.getPrimary(), Fonts.getMedium(10));
++        Skia.drawText("Command center", left, top + 34, palette.getOnSurface(), Fonts.getMedium(29));
++        Skia.drawText("HUD, player tools, render effects, profiles, music and utilities.", left, top + 56, palette.getOnSurfaceVariant(), Fonts.getRegular(12));
++
++        int modules = Fast.getInstance().getModManager().getMods().size();
++        int profiles = Fast.getInstance().getProfileManager().getProfiles().size();
++        float statY = top + 76, statGap = 9, statW = (right - left - statGap * 3) / 4F;
++        drawStat(left, statY, statW, "MODULES", String.valueOf(modules), palette);
++        drawStat(left + (statW + statGap), statY, statW, "HUD", "28", palette);
++        drawStat(left + (statW + statGap) * 2, statY, statW, "PROFILES", String.valueOf(profiles), palette);
++        drawStat(left + (statW + statGap) * 3, statY, statW, "ENGINE", "SKIA", palette);
++
++        float cardY = statY + 60, cardGap = 11, cardW = (right - left - cardGap) / 2F;
++        float cardH = Math.max(118, (height - (cardY - y) - 72) / 2F);
++        drawFeature(left, cardY, cardW, cardH, "HUD & OVERLAYS", "28", "FPS · Ping · Coords · Keystrokes · Armor · Combo · Reach · Speed", palette);
++        drawFeature(left + cardW + cardGap, cardY, cardW, cardH, "PLAYER TOOLS", "9", "AutoGG · Freelook · Zoom · Old Animations · SnapTap · Taplook", palette);
++        drawFeature(left, cardY + cardH + cardGap, cardW, cardH, "RENDER & EFFECTS", "7", "Fullbright · Particles · Projectile Trail · Custom Hand · Overlay Editor", palette);
++        drawFeature(left + cardW + cardGap, cardY + cardH + cardGap, cardW, cardH, "UTILITY & SERVICES", "7+", "Discord RPC · Hypixel · Music · Browser · Resource Pack Converter", palette);
++
++        Skia.drawCenteredText("Left click modules to toggle · Right click settings · HUD editor lives on the rail", x + width / 2, y + height - 24, palette.getOnSurfaceVariant(), Fonts.getRegular(10));
++    }
++    private void drawStat(float sx, float sy, float sw, String label, String value, ColorPalette palette) {
++        Skia.drawRoundedRect(sx, sy, sw, 49, 14, palette.getSurfaceContainerHigh());
++        Skia.drawOutline(sx, sy, sw, 49, 14, 1, ColorUtils.applyAlpha(palette.getPrimary(), .10F));
++        Skia.drawText(label, sx + 11, sy + 15, palette.getOnSurfaceVariant(), Fonts.getRegular(8));
++        Skia.drawText(value, sx + 11, sy + 36, palette.getOnSurface(), Fonts.getMedium(15));
++    }
++    private void drawFeature(float sx, float sy, float sw, float sh, String title, String count, String details, ColorPalette palette) {
++        Skia.drawRoundedRect(sx, sy, sw, sh, 18, palette.getSurface());
++        Skia.drawOutline(sx, sy, sw, sh, 18, 1, ColorUtils.applyAlpha(palette.getPrimary(), .12F));
++        Skia.drawText(title, sx + 15, sy + 23, palette.getPrimary(), Fonts.getMedium(9));
++        Skia.drawText(count, sx + sw - 44, sy + 27, ColorUtils.applyAlpha(palette.getOnSurface(), .22F), Fonts.getMedium(21));
++        Skia.drawText(details, sx + 15, sy + 51, palette.getOnSurface(), Fonts.getRegular(11));
++        Skia.drawText("Open Mods to configure every feature", sx + 15, sy + sh - 18, palette.getOnSurfaceVariant(), Fonts.getRegular(9));
++    }
++}
++'''
++
++(root / "src/main/java/com/fastclient/gui/modmenu/pages/HomePage.java").write_text(home, encoding="utf-8")
++
++p = root / "src/main/java/com/fastclient/gui/modmenu/component/NavigationRail.java"
++s = p.read_text(encoding="utf-8")
++s = s.replace("Skia.drawRoundedRectVarying(x, y, width, height, 35, 0, 0, 35, palette.getSurface());\n\n\t\tSkia.drawRect(x + width - 1, y, 1, height, Color.WHITE);", "Skia.drawRoundedRectVarying(x, y, width, height, 30, 0, 0, 30, palette.getSurface());\n\n\t\tSkia.drawRect(x + width - 1, y + 18, 1, height - 36, ColorUtils.applyAlpha(palette.getOnSurfaceVariant(), 0.18F));")
++s = s.replace("float navStartY = 120;", "float navStartY = 126;").replace("float navItemHeight = 68;", "float navItemHeight = 72;")
++s = s.replace("float offsetY = 120;", "float offsetY = 126;").replace("offsetY += 68;", "offsetY += 72;")
++old_block = """\t\t\tjava.awt.Color c0 = java.awt.Color.WHITE;\n\t\t\tjava.awt.Color c1 = java.awt.Color.WHITE;\n\n\t\t\tAnimation animation = n.animation;\n\t\t\tfloat selWidth = 56;\n\t\t\tfloat selHeight = 32;\n\t\t\tfloat adjustedY = y + offsetY + scrollHelper.getValue();\n\t\t\tboolean isActive = currentNavigation.equals(n);\n\n\t\t\tSkia.drawText(icon, x + (width / 2) - (iconWidth / 2), y + (offsetY + (selHeight / 2)) - (iconHeight / 2),\n\t\t\t\t\tc0, font);\n\t\t\tSkia.drawCenteredText(I18n.get(title), x + (width / 2), y + offsetY + selHeight + 5, c1,\n\t\t\t\t\tFonts.getMedium(12));\n\n\t\t\tif (isActive) {\n\t\t\t\tfloat barWidth = 32;\n\t\t\t\tfloat barHeight = 3;\n\t\t\t\tfloat barX = x + (width / 2) - (barWidth / 2);\n\t\t\t\tfloat barY = y + offsetY + selHeight + 18;\n\t\t\t\tSkia.drawRoundedRect(barX, barY, barWidth, barHeight, 1.5F, palette.getPrimary());\n\t\t\t}\n"""
++new_block = """\t\t\tboolean isActive = currentNavigation.equals(n);\n\t\t\tjava.awt.Color c0 = isActive ? palette.getPrimary() : palette.getOnSurfaceVariant();\n\t\t\tjava.awt.Color c1 = isActive ? palette.getOnSurface() : palette.getOnSurfaceVariant();\n\n\t\t\tAnimation animation = n.animation;\n\t\t\tfloat selWidth = 62;\n\t\t\tfloat selHeight = 36;\n\t\t\tfloat adjustedY = y + offsetY + scrollHelper.getValue();\n\n\t\t\tif (isActive) {\n\t\t\t\tfloat pillX = x + (width / 2) - (selWidth / 2);\n\t\t\t\tSkia.drawRoundedRect(pillX, y + offsetY - 2, selWidth, selHeight + 6, 16,\n\t\t\t\t\t\tColorUtils.applyAlpha(palette.getPrimaryContainer(), 0.72F));\n\t\t\t}\n\n\t\t\tSkia.drawText(icon, x + (width / 2) - (iconWidth / 2), y + (offsetY + (selHeight / 2)) - (iconHeight / 2),\n\t\t\t\t\tc0, font);\n\t\t\tSkia.drawCenteredText(I18n.get(title), x + (width / 2), y + offsetY + selHeight + 7, c1,\n\t\t\t\t\tFonts.getMedium(11));\n"""
++if old_block in s:
++    s = s.replace(old_block, new_block)
++p.write_text(s, encoding="utf-8")
++
++(root / "README.md").write_text("""# Axolot Core 0.14.0\n\nAxolot Core is the in-game component bundled with Axolot Client. It is derived from the user-provided Fast Client source and reworked for the Axolot visual system.\n\nTarget: Fabric / Minecraft 1.21.4 / Java 21.\n\nThe original uploaded source did not include a LICENSE file. Preserve original attribution and verify redistribution rights before public/commercial distribution.\n""", encoding="utf-8")
++
++
++# Fail the release build if the Fast feature set is incomplete. This keeps Axolot Core
++# functionally equivalent instead of silently shipping only a visual reskin.
++required_modules = [
++    'ArmorStatsMod','BedwarsStatsOverlayMod','BossBarMod','ClockMod','ComboCounterMod','CoordsMod','DayCounterMod','FPSDisplayMod','GameModeDisplayMod','HealthDisplayMod','JumpResetIndicatorMod','KeystrokesMod','MemoryUsageMod','MouseStrokesMod','MusicInfoMod','NameDisplayMod','PingDisplayMod','PitchDisplayMod','PlayerCounterMod','PlayTimeDisplayMod','ProtocolVersionMod','ReachDisplayMod','ServerIPDisplayMod','SpeedometerMod','StopwatchMod','WebBrowserMod','WeatherDisplayMod','YawDisplayMod',
++    'AutoGGMod','ForceMainHandMod','FreelookMod','HitDelayFixMod','NoJumpDelayMod','OldAnimationsMod','SnapTapMod','TaplookMod','ZoomMod',
++    'BloodParticleMod','CustomHandMod','FullbrightMod','MusicWaveformMod','OverlayEditorMod','ParticlesMod','ProjectileTrailMod',
++    'DiscordRPCMod','HypixelMod','TimeChangerMod','WeatherChangerMod',
++    'HUDModSettings','ModMenuSettings','SystemSettings'
++]
++java_root = root / 'src/main/java/com/fastclient'
++missing_modules = [name for name in required_modules if not list(java_root.rglob(name + '.java'))]
++required_systems = [
++    'management/music/MusicManager.java',
++    'management/profile/ProfileManager.java',
++    'libraries/resourcepack/ResourcePackConverter.java',
++    'libraries/browser/JCefBrowser.java',
++    'libraries/discordipc/IPCClient.java',
++    'management/hypixel/HypixelManager.java',
++    'gui/edithud/GuiEditHUD.java',
++]
++missing_systems = [rel for rel in required_systems if not (java_root / rel).exists()]
++if missing_modules or missing_systems:
++    raise SystemExit('Axolot Core feature verification failed: ' + ', '.join(missing_modules + missing_systems))
++print(f'Verified {len(required_modules)} module classes + {len(required_systems)} core systems')
++
++print(f"Prepared Axolot Core in {root}")
+--- a/src/main.tsx
++++ b/src/main.tsx
+@@ -130,6 +130,7 @@
+ type RemoteConfig = { microsoft_client_id: string; update_manifest_url: string; latest_launcher_version: string; curseforge_enabled: boolean; curseforge_proxy_url: string; updated_at?: string | null };
+ type HealthState = 'ok' | 'warn' | 'error' | 'checking';
+ type HealthItem = { id: string; label: string; state: HealthState; detail: string };
++type AxolotCoreStatus = { supported: boolean; installed: boolean; version: string; path: string; detail: string };
+ 
+ const AXOLOT_PUBLIC_CONFIG_URL = 'https://rlbgvgosxrhqnppbrtey.supabase.co/functions/v1/axolot-public-config';
+ const DEFAULT_UPDATE_MANIFEST = 'https://rlbgvgosxrhqnppbrtey.supabase.co/storage/v1/object/public/axolot-releases/stable/axolot-update.json';
+@@ -141,10 +142,49 @@
+ const nav: { id: Page; icon: React.ElementType; label: string }[] = [
+   { id: 'play', icon: Play, label: 'Play' },
+   { id: 'profiles', icon: Boxes, label: 'Profiles' },
++  { id: 'partners', icon: Package, label: 'Mods' },
+   { id: 'accounts', icon: Users, label: 'Accounts' },
+-  { id: 'partners', icon: Handshake, label: 'Partners' },
+-  { id: 'store', icon: ShoppingCart, label: 'Store' },
++  { id: 'store', icon: Sparkles, label: 'Client' },
+   { id: 'settings', icon: Settings, label: 'Settings' },
++];
++
++
++const coreFeatureGroups = [
++  {
++    id: 'hud',
++    title: 'HUD & overlays',
++    count: 28,
++    icon: Activity,
++    items: ['FPS', 'Ping', 'Coords', 'Keystrokes', 'Armor', 'Health', 'Combo', 'Reach', 'Speed', 'Clock', 'Memory', 'Server IP'],
++  },
++  {
++    id: 'player',
++    title: 'Player tools',
++    count: 9,
++    icon: Gamepad2,
++    items: ['AutoGG', 'Freelook', 'Zoom', 'Old Animations', 'Hit Delay Fix', 'No Jump Delay', 'SnapTap', 'Taplook', 'Main Hand'],
++  },
++  {
++    id: 'render',
++    title: 'Render & effects',
++    count: 7,
++    icon: Sparkles,
++    items: ['Fullbright', 'Particles', 'Blood Particles', 'Projectile Trail', 'Custom Hand', 'Overlay Editor', 'Music Waveform'],
++  },
++  {
++    id: 'utility',
++    title: 'Utility & services',
++    count: 7,
++    icon: SlidersHorizontal,
++    items: ['Discord RPC', 'Hypixel Stats', 'Time Changer', 'Weather Changer', 'Music Player', 'Web Browser', 'Resource Pack Converter'],
++  },
++] as const;
++
++const coreSystemHighlights = [
++  { title: 'Client profiles', value: 'Unlimited', icon: FolderKanban },
++  { title: 'HUD designs', value: '4 styles', icon: Sparkles },
++  { title: 'Music layer', value: 'Built-in', icon: MessageCircle },
++  { title: 'Network tools', value: 'Ready', icon: Wifi },
+ ];
+ 
+ const versionCatalog: VersionPreset[] = [
+@@ -292,6 +332,8 @@
+     { id: 'modrinth', label: 'Modrinth', state: 'checking', detail: 'Not checked yet' },
+     { id: 'curseforge', label: 'CurseForge', state: 'checking', detail: 'Not checked yet' },
+   ]);
++  const [coreStatus, setCoreStatus] = React.useState<AxolotCoreStatus | null>(null);
++  const [coreBusy, setCoreBusy] = React.useState(false);
+   const consoleEndRef = React.useRef<HTMLDivElement | null>(null);
+ 
+   const activeAccount = accounts.find((account) => account.id === activeAccountId) ?? accounts[0];
+@@ -355,6 +397,15 @@
+   }, [activeProfileId]);
+ 
+   const activeProfile = profiles.find((profile) => profile.id === activeProfileId) ?? profiles[0];
++
++  React.useEffect(() => {
++    if (!activeProfile) return;
++    let cancelled = false;
++    invoke<AxolotCoreStatus>('get_axolot_core_status', { profileId: activeProfile.id, gameVersion: activeProfile.versionId, loader: activeProfile.loader })
++      .then((result) => { if (!cancelled) setCoreStatus(result); })
++      .catch(() => { if (!cancelled) setCoreStatus(null); });
++    return () => { cancelled = true; };
++  }, [activeProfile?.id, activeProfile?.versionId, activeProfile?.loader]);
+ 
+   React.useEffect(() => {
+     let disposed = false;
+@@ -546,6 +597,21 @@
+     }
+   }, [activeProfile?.id]);
+ 
++  const installCoreForActive = async () => {
++    if (!activeProfile) return;
++    setCoreBusy(true);
++    try {
++      const result = await invoke<AxolotCoreStatus>('install_axolot_core', { profileId: activeProfile.id, gameVersion: activeProfile.versionId, loader: activeProfile.loader });
++      setCoreStatus(result);
++      setStatus(result.installed ? `Axolot Core ${result.version} ready` : result.detail);
++      if (result.installed) await refreshLocalMods(activeProfile.id);
++    } catch (error) {
++      setStatus(`Axolot Core: ${String(error)}`);
++    } finally {
++      setCoreBusy(false);
++    }
++  };
++
+   const saveSettings = () => {
+     const cleaned = sanitizeMinecraftName(launcherName) || activeAccount?.username || 'Player';
+     if (activeAccount?.kind === 'offline' && cleaned !== activeAccount.username) {
+@@ -1182,7 +1248,7 @@
+       <header className="axo-topbar">
+         <button className="axo-brand" onClick={() => setPage('play')}>
+           <span className="axo-logo"><i /><b>A</b></span>
+-          <span className="axo-brand-copy"><strong>AXOLOT CLIENT</strong><small>NEBULA 0.12</small></span>
++          <span className="axo-brand-copy"><strong>AXOLOT CLIENT</strong><small>NEBULA 0.14</small></span>
+         </button>
+ 
+         <nav className="top-nav">
+@@ -1210,104 +1276,100 @@
+ 
+       <main className="axo-workspace">
+         {page === 'play' && activeProfile && (
+-          <section className="play-v2-shell">
+-            <div className="play-v2-main panel-glass">
+-              <div className="play-v2-copy">
+-                <span className="micro-label">MINECRAFT</span>
+-                <h1>Axolot Client</h1>
+-                <span className="nebula-badge">NEBULA 0.12</span>
+-                <p>A faster, smoother, more personal way to play Minecraft.</p>
+-              </div>
+-
+-              <div className="play-v2-visual" aria-hidden="true">
+-                <div className="play-v2-orbit orbit-a" />
+-                <div className="play-v2-orbit orbit-b" />
+-                <div className="play-v2-orbit orbit-c" />
+-                <span className="portal-tag play-v2-tag tag-fps">FPS+</span>
+-                <span className="portal-tag play-v2-tag tag-safe">SAFE</span>
+-                <span className="portal-tag play-v2-tag tag-core">AXO CORE</span>
+-                <div className="axo-creature play-v2-creature">
+-                  <span className="gill gill-l1"/><span className="gill gill-l2"/><span className="gill gill-l3"/>
+-                  <span className="gill gill-r1"/><span className="gill gill-r2"/><span className="gill gill-r3"/>
+-                  <div className="axo-head"><span className="eye e1"/><span className="eye e2"/><span className="smile"/></div>
+-                  <div className="axo-body" />
++          <section className="prime-home">
++            <div className="prime-main">
++              <div className="prime-stage panel-glass">
++                <div className="prime-stage-head">
++                  <div>
++                    <span className="micro-label">ACTIVE SESSION</span>
++                    <h1>{activeProfile.name}</h1>
++                    <div className="prime-badges">
++                      <span>{activeProfile.versionId}</span>
++                      <span>{activeProfile.loader}</span>
++                      <span>{activeProfile.ram} GB</span>
++                      {activeProfile.autoOptimized && <span className="boost"><Zap size={11}/> BOOST</span>}
++                    </div>
++                  </div>
++                  <div className={`prime-runtime game-${gameStatus?.state || 'stopped'}`}><i/>{gameStatus?.state === 'running' ? 'RUNNING' : 'READY'}</div>
+                 </div>
+-              </div>
+-
+-              <div className="play-v2-actions">
+-                <button
+-                  className="play-v2-launch"
+-                  disabled={launching || gameStatus?.state === 'running'}
+-                  onClick={() => launchProfile(activeProfile)}
+-                  title={gameStatus?.state === 'running' ? 'Minecraft is running' : 'Launch'}
+-                >
+-                  {gameStatus?.state === 'running' ? <Activity size={34}/> : <Play size={38} fill="currentColor"/>}
+-                </button>
+-                <button className="play-v2-tune" onClick={() => setPage('profiles')} title="Profile settings"><SlidersHorizontal size={25}/></button>
+-              </div>
+-
+-              <div className="play-v2-profilebar">
+-                <button onClick={() => setPage('profiles')}>
+-                  <span className="pv2-icon"><Gamepad2 size={21}/></span>
+-                  <span><small>Profile</small><b>{activeProfile.name}</b></span>
+-                  <ChevronDown size={15}/>
+-                </button>
+-                <button onClick={() => setPage('profiles')}>
+-                  <span className="pv2-icon"><Boxes size={21}/></span>
+-                  <span><small>Version</small><b>{activeProfile.versionId}</b></span>
+-                  <ChevronDown size={15}/>
+-                </button>
+-                <button onClick={() => setPage('profiles')}>
+-                  <span className="pv2-icon"><Users size={21}/></span>
+-                  <span><small>Loader</small><b>{activeProfile.loader}</b></span>
+-                  <ChevronDown size={15}/>
+-                </button>
+-                <button onClick={() => setPage('profiles')}>
+-                  <span className="pv2-icon"><Cpu size={21}/></span>
+-                  <span><small>RAM</small><b>{activeProfile.ram} GB</b></span>
+-                  <ChevronDown size={15}/>
+-                </button>
+-              </div>
+-            </div>
+-
+-            <aside className="play-v2-side">
+-              <div className="pv2-status panel-glass">
+-                <div className="pv2-card-heading">
+-                  <div><span className="micro-label">CLIENT STATUS</span><h3><i/>{progress === 100 ? 'Client is ready' : status}</h3></div>
+-                  <button className="pv2-download" onClick={() => updateStatus?.available ? setUpdatePromptOpen(true) : sync()} title={updateStatus?.available ? 'Install update' : 'Sync'}><Download size={20}/></button>
++
++                <div className="prime-stage-body">
++                  <div className="prime-session-copy">
++                    <span className="nebula-badge">NEBULA 0.14</span>
++                    <h2>Launch. Tune.<br/>Stay in flow.</h2>
++                    <p>{activeAccount?.username || launcherName || 'Player'} · {activeProfile.modpack || 'Custom profile'}</p>
++                    <div className="prime-launch-row">
++                      <button className="prime-launch" disabled={launching || gameStatus?.state === 'running'} onClick={() => launchProfile(activeProfile)} title="Launch Minecraft">
++                        {gameStatus?.state === 'running' ? <Activity size={32}/> : <Play size={34} fill="currentColor"/>}
++                      </button>
++                      <button className="prime-tune" onClick={() => setPage('profiles')} title="Tune profile"><SlidersHorizontal size={22}/></button>
++                      <button className="prime-tune" onClick={() => openModLibrary(activeProfile, 'installed')} title="Open mods"><Package size={22}/></button>
++                    </div>
++                  </div>
++
++                  <div className="prime-core-visual" aria-hidden="true">
++                    <div className="prime-ring ring-one"/><div className="prime-ring ring-two"/><div className="prime-ring ring-three"/>
++                    <div className="axo-creature prime-creature">
++                      <span className="gill gill-l1"/><span className="gill gill-l2"/><span className="gill gill-l3"/>
++                      <span className="gill gill-r1"/><span className="gill gill-r2"/><span className="gill gill-r3"/>
++                      <div className="axo-head"><span className="eye e1"/><span className="eye e2"/><span className="smile"/></div><div className="axo-body"/>
++                    </div>
++                    <span className="prime-float-tag tag-a">FPS+</span><span className="prime-float-tag tag-b">SAFE</span><span className="prime-float-tag tag-c">CORE</span>
++                  </div>
+                 </div>
+-                <div className="pulse-bar pv2-progress"><span style={{width: `${progress}%`}} /></div>
+-                <div className="pv2-status-foot"><small>{progress === 100 ? 'Everything synced' : status}</small><b>{progress}%</b></div>
+-              </div>
+-
+-              <div className="pv2-tools panel-glass">
+-                <span className="micro-label">QUICK TOOLS</span>
+-                <div className="pv2-tool-grid">
+-                  <button onClick={() => setPage('profiles')}><Boxes size={23}/><span>Profiles</span></button>
+-                  <button onClick={() => openModLibrary(activeProfile, 'installed')}><Package size={23}/><span>Mods</span></button>
+-                  <button onClick={() => openModLibrary(activeProfile, 'modpacks')}><FileArchive size={23}/><span>Modpacks</span></button>
+-                  <button onClick={showGameConsole}><Terminal size={23}/><span>Live Console</span></button>
++
++                <div className="prime-session-strip">
++                  <button onClick={() => setPage('profiles')}><Gamepad2 size={18}/><span><small>PROFILE</small><b>{activeProfile.name}</b></span><ChevronRight size={14}/></button>
++                  <button onClick={() => openModLibrary(activeProfile,'installed')}><Package size={18}/><span><small>LOCAL MODS</small><b>{localMods.length}</b></span><ChevronRight size={14}/></button>
++                  <button onClick={() => setPage('store')}><Sparkles size={18}/><span><small>AXOLOT CORE</small><b>{coreStatus?.installed ? 'Ready' : coreStatus?.supported ? 'Available' : '1.21.4'}</b></span><ChevronRight size={14}/></button>
++                  <button onClick={showGameConsole}><Terminal size={18}/><span><small>RUNTIME</small><b>{gameStatus?.state === 'running' ? 'Live' : 'Idle'}</b></span><ChevronRight size={14}/></button>
+                 </div>
+               </div>
+ 
+-              <button className="pv2-account panel-glass" onClick={() => setPage('accounts')}>
+-                <span className="pv2-account-icon"><User size={26}/></span>
+-                <span><small>ACCOUNTS</small><b>{activeAccount?.username || launcherName || 'Player'}</b></span>
+-                <ChevronRight size={18}/>
++              <div className="prime-dock">
++                <div className="prime-quick panel-glass">
++                  <div className="prime-card-title"><span className="micro-label">QUICK COMMANDS</span><b>Jump back in</b></div>
++                  <div className="prime-quick-grid">
++                    <button onClick={() => setPage('profiles')}><Boxes size={19}/><span>Profiles</span></button>
++                    <button onClick={() => openModLibrary(activeProfile,'browse-mods')}><Search size={19}/><span>Discover</span></button>
++                    <button onClick={() => openModLibrary(activeProfile,'modpacks')}><FileArchive size={19}/><span>Modpacks</span></button>
++                    <button onClick={() => setPage('store')}><Sparkles size={19}/><span>Client</span></button>
++                  </div>
++                </div>
++
++                <div className="prime-profile-card panel-glass">
++                  <div className="prime-card-title"><span className="micro-label">PROFILE HEALTH</span><b>{activeProfile.name}</b></div>
++                  <div className="prime-health-row"><span><Cpu size={16}/> RAM</span><b>{activeProfile.ram} GB</b></div>
++                  <div className="prime-health-row"><span><Zap size={16}/> AutoBoost</span><b className={activeProfile.autoOptimized ? 'good' : ''}>{activeProfile.autoOptimized ? 'ON' : 'OFF'}</b></div>
++                  <div className="prime-health-row"><span><ShieldCheck size={16}/> Core</span><b className={coreStatus?.installed ? 'good' : ''}>{coreStatus?.installed ? 'READY' : 'OPTIONAL'}</b></div>
++                </div>
++              </div>
++            </div>
++
++            <aside className="prime-side">
++              <div className="prime-status panel-glass">
++                <div className="prime-card-title"><span className="micro-label">CLIENT PULSE</span><b>{progress === 100 ? 'Everything ready' : status}</b></div>
++                <div className="pulse-bar"><span style={{width:`${progress}%`}}/></div>
++                <div className="prime-status-foot"><span>{updateStatus?.available ? `Update ${updateStatus.latest_version}` : 'Stable channel'}</span><b>{progress}%</b></div>
++                <button onClick={() => updateStatus?.available ? setUpdatePromptOpen(true) : sync()}><Download size={16}/>{updateStatus?.available ? 'Install update' : 'Sync client'}</button>
++              </div>
++
++              <button className="prime-account panel-glass" onClick={() => setPage('accounts')}>
++                <span className="user-avatar"><User size={18}/></span><span><small>PLAYING AS</small><b>{activeAccount?.username || launcherName || 'Player'}</b></span><ChevronRight size={17}/>
+               </button>
+ 
+-              <div className="pv2-performance panel-glass">
+-                <span className="micro-label">PERFORMANCE</span>
+-                <div className="pv2-perf-grid">
+-                  <button onClick={() => setPage('settings')}>
+-                    <Zap size={24}/><span>AutoBoost</span><b className={activeProfile.autoOptimized ? 'on' : 'off'}>{activeProfile.autoOptimized ? '● ON' : '○ OFF'}</b>
+-                  </button>
+-                  <button onClick={() => openModLibrary(activeProfile, 'installed')}>
+-                    <Package size={24}/><span>Local Mods</span><b className="on">{localMods.length}</b>
+-                  </button>
+-                  <button onClick={() => showGameConsole()}>
+-                    <Gamepad2 size={24}/><span>Game Runtime</span><b className={gameStatus?.state === 'running' ? 'on' : 'off'}>{gameStatus?.state === 'running' ? '● ON' : '○ IDLE'}</b>
+-                  </button>
++              <div className="prime-core-card panel-glass">
++                <div className="prime-card-title"><span className="micro-label">AXOLOT CORE</span><b>51 modules + tools</b></div>
++                <div className="prime-core-metrics"><span><b>28</b><small>HUD</small></span><span><b>9</b><small>PLAYER</small></span><span><b>7</b><small>RENDER</small></span><span><b>7</b><small>UTILITY</small></span></div>
++                <button onClick={() => setPage('store')}>Open client <ChevronRight size={15}/></button>
++              </div>
++
++              <div className="prime-performance panel-glass">
++                <div className="prime-card-title"><span className="micro-label">PERFORMANCE</span><b>Session stack</b></div>
++                <div className="prime-perf-list">
++                  <span><Zap size={16}/><b>AutoBoost</b><i className={activeProfile.autoOptimized?'on':''}/></span>
++                  <span><Package size={16}/><b>Mods</b><strong>{localMods.length}</strong></span>
++                  <span><Gamepad2 size={16}/><b>Runtime</b><strong>{gameStatus?.state === 'running' ? 'LIVE' : 'IDLE'}</strong></span>
+                 </div>
+               </div>
+             </aside>
+@@ -1316,8 +1378,8 @@
+ 
+         {page === 'profiles' && !creatingProfile && !managingModsProfileId && (
+           <section className="profiles-new">
+-            <div className="page-heading-new">
+-              <div><span className="micro-label">INSTANCES</span><h1>Your Minecraft,<br/><em>organized.</em></h1></div>
++            <div className="page-heading-new fast-page-head">
++              <div><span className="micro-label">PROFILE LIBRARY</span><h1>Profiles</h1><p className="page-subtitle">Versions, loaders, memory and mods — all in one place.</p></div>
+               <div className="heading-actions">
+                 <label className="search-pill"><Search size={16}/><input value={profileSearch} onChange={(e)=>setProfileSearch(e.target.value)} placeholder="Search profiles"/></label>
+                 <button className="accent-action" onClick={() => { setCreatingProfile(true); setNewProfileName(`My ${selectedVersionId} ${selectedLoader}`); }}><Plus size={16}/> Create profile</button>
+@@ -1346,8 +1408,14 @@
+               ))}
+ 
+               <button className="instance-create" onClick={() => setCreatingProfile(true)}>
+-                <span><Plus size={30}/></span><b>Create new world profile</b><small>Version · loader · RAM · AutoBoost</small>
++                <span><Plus size={30}/></span><b>Create new profile</b><small>Version · loader · RAM · AutoBoost</small>
+               </button>
++            </div>
++            <div className="profile-template-row panel-glass">
++              <span className="micro-label">QUICK PRESETS</span>
++              <button onClick={()=>{setSelectedVersionId('1.21.4');setSelectedLoader('Fabric');setNewProfileRam(4);setNewProfileName('Axolot Performance');setCreatingProfile(true);}}><Zap size={16}/><span><b>Performance</b><small>1.21.4 · Fabric · 4 GB</small></span></button>
++              <button onClick={()=>{setSelectedVersionId('1.21.11');setSelectedLoader('Vanilla');setNewProfileRam(4);setNewProfileName('Clean Vanilla');setCreatingProfile(true);}}><Sparkles size={16}/><span><b>Clean Vanilla</b><small>Latest · 4 GB</small></span></button>
++              <button onClick={()=>{setSelectedVersionId('1.8.9');setSelectedLoader('Vanilla');setNewProfileRam(3);setNewProfileName('Legacy PvP');setCreatingProfile(true);}}><Gamepad2 size={16}/><span><b>Legacy PvP</b><small>1.8.9 · 3 GB</small></span></button>
+             </div>
+           </section>
+         )}
+@@ -1387,7 +1455,7 @@
+ 
+               <div className={`boost-lab ${selectedLoader==='Fabric'?'ready':'off'}`}>
+                 <span className="boost-lab-icon"><Zap size={20}/></span>
+-                <div><b>Axolot AutoBoost</b><p>{selectedLoader==='Fabric'?'Automatic Sodium + Lithium + FerriteCore + ImmediatelyFast + EntityCulling + Axolot Core setup.':'Switch to Fabric to enable the automatic Axolot performance stack.'}</p></div>
++                <div><b>Axolot AutoBoost</b><p>{selectedLoader==='Fabric'?(selectedVersionId==='1.21.4'?'Automatic Sodium + Lithium + FerriteCore + ImmediatelyFast + EntityCulling + Axolot Core.':'Automatic Sodium + Lithium + FerriteCore + ImmediatelyFast + EntityCulling. Axolot Core currently targets 1.21.4.'):'Switch to Fabric to enable the automatic Axolot performance stack.'}</p></div>
+                 <span className="boost-state">{selectedLoader==='Fabric'?'READY':'FABRIC ONLY'}</span>
+               </div>
+ 
+@@ -1461,11 +1529,11 @@
+ 
+         {page === 'accounts' && (
+           <section className="accounts-page">
+-            <div className="page-heading-new">
++            <div className="page-heading-new fast-page-head">
+               <div>
+                 <span className="micro-label">IDENTITY VAULT</span>
+-                <h1>Switch accounts.<br/><em>Keep every world yours.</em></h1>
+-                <p className="account-lead">Store multiple launcher identities and choose exactly which account Axolot uses before starting Minecraft.</p>
++                <h1>Accounts</h1>
++                <p className="account-lead">Offline and Microsoft identities with one-click switching.</p>
+               </div>
+               <div className="account-active-summary panel-glass">
+                 <span className="user-avatar large"><User size={20}/></span>
+@@ -1527,17 +1595,67 @@
+           </section>
+         )}
+ 
+-        {page === 'partners' && (
+-          <section className="simple-page"><div><span className="micro-label">COMMUNITY</span><h1>Partner reef</h1><p>Featured servers and creators can live here without copying another launcher layout.</p></div><div className="placeholder-world panel-glass"><Handshake size={48}/><b>Partner ecosystem</b><small>Coming in a later Axolot release.</small></div></section>
++        {page === 'partners' && activeProfile && (
++          <section className="fast-dashboard-page">
++            <div className="page-heading-new fast-page-head">
++              <div><span className="micro-label">MOD LIBRARY</span><h1>Mods</h1><p className="page-subtitle">Manage local mods or discover compatible releases for {activeProfile.versionId}.</p></div>
++              <div className="heading-actions"><button className="accent-action" onClick={() => openModLibrary(activeProfile, 'browse-mods')}><Search size={16}/> Browse mods</button></div>
++            </div>
++            <div className="fast-dashboard-grid">
++              <button className="fast-feature-card" onClick={() => openModLibrary(activeProfile, 'installed')}><span><HardDrive size={24}/></span><div><b>Installed</b><small>{localMods.length} local mod{localMods.length === 1 ? '' : 's'}</small></div><ChevronRight size={18}/></button>
++              <button className="fast-feature-card" onClick={() => openModLibrary(activeProfile, 'browse-mods')}><span><Package size={24}/></span><div><b>Modrinth & CurseForge</b><small>Compatibility-filtered catalog</small></div><ChevronRight size={18}/></button>
++              <button className="fast-feature-card" onClick={() => openModLibrary(activeProfile, 'modpacks')}><span><FileArchive size={24}/></span><div><b>Modpacks</b><small>Import and install packs</small></div><ChevronRight size={18}/></button>
++              <button className="fast-feature-card" onClick={() => setPage('settings')}><span><Zap size={24}/></span><div><b>AutoBoost</b><small>{activeProfile.autoOptimized ? 'Optimization pack enabled' : 'Enable automatic optimization'}</small></div><ChevronRight size={18}/></button>
++            </div>
++            <div className="fast-mod-summary panel-glass">
++              <div><span className="micro-label">ACTIVE PROFILE</span><h2>{activeProfile.name}</h2><p>{activeProfile.versionId} · {activeProfile.loader} · {activeProfile.ram} GB RAM</p></div>
++              <button onClick={() => openModLibrary(activeProfile, 'installed')}>Open library <ChevronRight size={16}/></button>
++            </div>
++          </section>
+         )}
+ 
+-        {page === 'store' && (
+-          <section className="simple-page"><div><span className="micro-label">COSMETICS</span><h1>Axolot market</h1><p>A future home for capes, themes, cosmetics and client perks.</p></div><div className="placeholder-world panel-glass"><ShoppingCart size={48}/><b>Store in development</b><small>Launcher commerce is not enabled yet.</small></div></section>
++        {page === 'store' && activeProfile && (
++          <section className="core-prime-page">
++            <div className="page-heading-new fast-page-head core-prime-head">
++              <div><span className="micro-label">IN-GAME CLIENT</span><h1>Axolot Core</h1><p className="page-subtitle">Full Fast Client feature set, rebuilt into the Axolot Nebula experience.</p></div>
++              <div className="core-head-actions">
++                <div className={`core-state-chip ${coreStatus?.installed ? 'ready' : coreStatus?.supported ? 'available' : 'unsupported'}`}>{coreStatus?.installed ? '● CORE READY' : coreStatus?.supported ? '● INSTALL READY' : '1.21.4 FABRIC'}</div>
++                <button className="accent-action" disabled={coreBusy || !coreStatus?.supported} onClick={() => void installCoreForActive()}>{coreBusy ? 'Installing…' : coreStatus?.installed ? 'Repair core' : 'Install core'}</button>
++              </div>
++            </div>
++
++            <div className="core-prime-stats">
++              <div><b>51</b><span>Modules</span></div><div><b>28</b><span>HUD overlays</span></div><div><b>4</b><span>HUD designs</span></div><div><b>1.21.4</b><span>Fabric target</span></div>
++              <div><b>{coreStatus?.installed ? 'READY' : 'OPTIONAL'}</b><span>{activeProfile.name}</span></div>
++            </div>
++
++            <div className="core-prime-layout">
++              <div className="core-prime-main panel-glass">
++                <div className="core-prime-brand">
++                  <div className="core-emblem"><span>A</span><i/><b/></div>
++                  <div><span className="micro-label">NEBULA CORE 0.14</span><h2>Everything Fast had.<br/>Now feels like Axolot.</h2><p>{coreStatus?.detail || 'HUD, PvP helpers, render effects, profiles, music, browser, Discord RPC, Hypixel tools and resource-pack conversion are bundled in the Core.'}</p></div>
++                </div>
++                <div className="core-system-grid">
++                  {coreSystemHighlights.map(({title,value,icon:Icon})=><div key={title}><Icon size={18}/><span><small>{title}</small><b>{value}</b></span></div>)}
++                </div>
++                <div className="core-install-note"><ShieldCheck size={17}/><span><b>Profile-aware install</b><small>Axolot only injects Core into compatible Fabric 1.21.4 profiles and keeps other profiles clean.</small></span></div>
++              </div>
++
++              <div className="core-module-catalog">
++                {coreFeatureGroups.map(({id,title,count,icon:Icon,items}) => (
++                  <article className={`core-group core-group-${id}`} key={id}>
++                    <div className="core-group-head"><span><Icon size={19}/></span><div><b>{title}</b><small>{count} features</small></div><strong>{count}</strong></div>
++                    <div className="core-chip-cloud">{items.map(item=><span key={item}>{item}</span>)}</div>
++                  </article>
++                ))}
++              </div>
++            </div>
++          </section>
+         )}
+ 
+         {page === 'settings' && (
+           <section className="settings-new">
+-            <div className="page-heading-new"><div><span className="micro-label">SYSTEM</span><h1>Make Axolot<br/><em>feel yours.</em></h1></div><button className="accent-action" onClick={saveSettings}>Save changes</button></div>
++            <div className="page-heading-new fast-page-head"><div><span className="micro-label">SYSTEM</span><h1>Settings</h1><p className="page-subtitle">Launcher, memory, updates and integrations.</p></div><button className="accent-action" onClick={saveSettings}>Save changes</button></div>
+             <div className="settings-bento">
+               <label className="setting-tile panel-glass"><span>Active offline username</span><input value={launcherName} onChange={(e)=>renameActiveOfflineAccount(e.target.value)} disabled={activeAccount?.kind !== 'offline'}/><small>Rename the currently active offline account. Manage all accounts from the Accounts tab.</small></label>
+               <label className="setting-tile panel-glass"><span>Default memory</span><b className="memory-big">{globalRam} GB</b><input type="range" min="2" max="16" value={globalRam} onChange={(e)=>setGlobalRam(Number(e.target.value))}/><small>Recommended 4–8 GB.</small></label><label className="setting-tile panel-glass"><span>Quick connect server</span><input value={serverAddress} onChange={(e)=>setServerAddress(e.target.value)} placeholder="play.yourserver.com:25565"/><small>Leave empty to open the normal multiplayer menu.</small></label>
+@@ -1572,7 +1690,7 @@
+           <div className="boot-radar" aria-hidden="true"><span/><b/><i/></div>
+           <div className="boot-core">
+             <div className="boot-axo"><span>A</span><i/><b/></div>
+-            <span className="micro-label">AXOLOT NEBULA 0.12.4</span>
++            <span className="micro-label">AXOLOT NEBULA 0.14.0</span>
+             <h2>Waking the lagoon...</h2>
+             <p>{bootMessage}</p>
+             <div className="boot-line"><span style={{width:`${bootPercent}%`}}/></div>
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -581,3 +581,679 @@
+   .axo-topbar{height:78px!important}.top-nav{top:101px!important;height:calc(100vh - 118px)!important}.axo-workspace{height:calc(100vh - 98px)!important}
+   .top-nav button{height:62px!important}.play-v2-copy{top:52px}.play-v2-copy h1{font-size:40px}.play-v2-copy p{margin-top:12px}.play-v2-visual{top:1%;height:61%}.play-v2-orbit.orbit-a{width:292px;height:292px}.play-v2-orbit.orbit-b{width:236px;height:236px}.play-v2-orbit.orbit-c{width:182px;height:182px}.play-v2-creature{transform:scale(.98)}.play-v2-actions{bottom:126px}.play-v2-launch,.play-v2-tune{height:64px}.play-v2-launch{width:270px}.play-v2-tune{width:64px}.play-v2-profilebar{min-height:86px}.pv2-tool-grid button{height:69px}.pv2-status{padding:15px 18px}.pv2-card-heading h3{margin:9px 0 12px}.pv2-tools,.pv2-performance{padding:14px 16px}.pv2-tool-grid,.pv2-perf-grid{margin-top:9px}
+ }
++
++/* =========================================================
++   AXOLOT 0.12.5 — UNIFIED DESKTOP LAYOUT SYSTEM
++   One geometry for every page. No page-specific drifting.
++   ========================================================= */
++:root{
++  --axo-top-h:82px;
++  --axo-side-w:88px;
++  --axo-page-gap:14px;
++  --axo-page-radius:24px;
++  --axo-content-pad:16px;
++}
++
++/* shell */
++.axo-topbar{
++  height:var(--axo-top-h)!important;
++  margin:10px 16px 0!important;
++  padding:0 18px!important;
++  border-radius:22px 22px 0 0!important;
++}
++.axo-brand{min-width:250px!important}
++.axo-logo{width:54px!important;height:46px!important}
++.axo-brand-copy strong{font-size:16px!important}
++.top-actions{gap:10px!important}
++.status-chip{height:42px!important}
++.user-chip{height:44px!important;min-width:220px!important;max-width:250px!important}
++
++.top-nav{
++  left:16px!important;
++  top:102px!important;
++  width:var(--axo-side-w)!important;
++  height:calc(100vh - 118px)!important;
++  padding:10px 8px!important;
++  gap:6px!important;
++  border-radius:22px!important;
++  overflow:hidden!important;
++  transition:width .22s cubic-bezier(.2,.8,.2,1),box-shadow .22s ease!important;
++}
++.top-nav:hover{
++  width:188px!important;
++  box-shadow:0 26px 90px rgba(0,0,0,.48),0 0 0 1px rgba(105,236,219,.08)!important;
++}
++.top-nav button{
++  width:70px!important;
++  min-width:70px!important;
++  height:62px!important;
++  min-height:62px!important;
++  flex:none!important;
++  transition:width .22s cubic-bezier(.2,.8,.2,1),background .18s ease,border-color .18s ease!important;
++}
++.top-nav:hover button{
++  width:170px!important;
++  flex-direction:row!important;
++  justify-content:flex-start!important;
++  padding:0 18px!important;
++  gap:13px!important;
++}
++.top-nav:hover button span{
++  font-size:11px!important;
++  white-space:nowrap!important;
++}
++
++.axo-workspace{
++  height:calc(100vh - 102px)!important;
++  margin:0 0 0 112px!important;
++  padding:12px 18px 18px 4px!important;
++  overflow:hidden!important;
++}
++.axo-workspace>section{
++  width:100%;
++  max-width:none;
++  min-width:0;
++}
++
++/* shared headings */
++.page-heading-new{
++  margin:0!important;
++  min-height:126px;
++  padding:22px 26px!important;
++  border:1px solid rgba(132,246,228,.09);
++  border-radius:var(--axo-page-radius);
++  background:
++    radial-gradient(circle at 85% 20%,rgba(139,104,255,.13),transparent 26%),
++    radial-gradient(circle at 8% 15%,rgba(86,229,211,.08),transparent 24%),
++    linear-gradient(135deg,rgba(6,22,29,.88),rgba(8,15,29,.88));
++  display:flex!important;
++  align-items:center!important;
++  justify-content:space-between!important;
++  gap:22px!important;
++  box-sizing:border-box;
++  overflow:hidden;
++}
++.page-heading-new h1,
++.settings-new .page-heading-new h1{
++  font-size:36px!important;
++  line-height:.98!important;
++  letter-spacing:-.045em!important;
++  margin:7px 0 0!important;
++}
++.page-heading-new h1 br{display:none}
++.page-heading-new .micro-label{font-size:8px}
++.heading-actions{margin-left:auto;flex:none!important;align-self:center!important}
++.search-pill{height:44px!important;min-width:250px!important;border-radius:14px!important}
++.accent-action{height:44px!important;border-radius:14px!important;padding:0 16px!important}
++
++/* PROFILES — fixed header, scrollable card region */
++.profiles-new{
++  height:100%!important;
++  min-height:0!important;
++  overflow:hidden!important;
++  padding:0!important;
++  display:grid!important;
++  grid-template-rows:auto minmax(0,1fr)!important;
++  gap:var(--axo-page-gap)!important;
++}
++.profiles-new .instance-grid{
++  min-height:0!important;
++  overflow-y:auto!important;
++  overflow-x:hidden!important;
++  overscroll-behavior:contain;
++  align-content:start!important;
++  grid-template-columns:repeat(3,minmax(0,1fr))!important;
++  gap:14px!important;
++  padding:2px 5px 14px 1px!important;
++}
++.profiles-new .instance-grid::-webkit-scrollbar{width:5px}
++.profiles-new .instance-grid::-webkit-scrollbar-thumb{border-radius:20px;background:rgba(107,233,216,.22)}
++.instance-card,.instance-create{
++  min-height:220px!important;
++  border-radius:21px!important;
++}
++.instance-card{padding:18px!important}
++.instance-orb{width:44px!important;height:44px!important;border-radius:14px!important}
++.instance-copy{margin-top:21px!important}
++.instance-copy h3{font-size:19px!important}
++.instance-stats{margin-top:13px!important}
++.instance-actions{margin-top:18px!important}
++.instance-create>span{width:58px!important;height:58px!important;border-radius:18px!important}
++
++/* ACCOUNTS — same geometry as profiles */
++.accounts-page{
++  height:100%!important;
++  min-height:0!important;
++  overflow:hidden!important;
++  padding:0!important;
++  display:grid!important;
++  grid-template-rows:auto minmax(0,1fr)!important;
++  gap:var(--axo-page-gap)!important;
++}
++.accounts-page .page-heading-new{
++  min-height:148px!important;
++  padding:22px 26px!important;
++}
++.accounts-page .page-heading-new:after{right:24px!important;bottom:12px!important;opacity:.55}
++.accounts-page .page-heading-new h1{
++  font-size:38px!important;
++  line-height:.96!important;
++  margin:8px 0 8px!important;
++  max-width:650px!important;
++}
++.accounts-page .page-heading-new h1 br{display:block}
++.account-lead{font-size:12px!important;line-height:1.5!important;margin:0!important;max-width:650px!important}
++.account-active-summary{
++  min-width:270px!important;
++  max-width:310px!important;
++  padding:13px 15px!important;
++  grid-template-columns:46px 1fr auto!important;
++}
++.account-active-summary .user-avatar.large{width:46px!important;height:46px!important;border-radius:15px!important}
++.account-layout{
++  min-height:0!important;
++  height:100%!important;
++  margin:0!important;
++  grid-template-columns:minmax(0,1fr) 330px!important;
++  gap:var(--axo-page-gap)!important;
++  align-items:stretch!important;
++}
++.account-library,.account-create{
++  min-height:0!important;
++  height:100%!important;
++  border-radius:var(--axo-page-radius)!important;
++  padding:20px!important;
++}
++.account-library{
++  display:flex!important;
++  flex-direction:column!important;
++  overflow:hidden!important;
++}
++.account-library-head{margin-bottom:12px!important;align-items:center!important}
++.account-library-head h2{font-size:20px!important}
++.account-filter-bar{margin:8px 0 12px!important}
++.account-grid{
++  flex:1!important;
++  min-height:0!important;
++  overflow-y:auto!important;
++  overflow-x:hidden!important;
++  align-content:start!important;
++  grid-template-columns:repeat(2,minmax(0,1fr))!important;
++  padding-right:4px!important;
++}
++.account-grid::-webkit-scrollbar{width:5px}.account-grid::-webkit-scrollbar-thumb{border-radius:20px;background:rgba(107,233,216,.22)}
++.account-card-new{min-height:176px!important;padding:15px!important;border-radius:19px!important}
++.account-card-new h3{font-size:17px!important;margin:13px 0 4px!important}
++.account-card-new p{font-size:10px!important;margin-bottom:13px!important}
++.account-avatar{width:42px!important;height:42px!important;border-radius:14px!important}
++.account-create{
++  position:relative!important;
++  top:auto!important;
++  overflow-y:auto!important;
++  overscroll-behavior:contain!important;
++}
++.account-create::-webkit-scrollbar{width:5px}.account-create::-webkit-scrollbar-thumb{border-radius:20px;background:rgba(107,233,216,.22)}
++.account-create-icon{width:50px!important;height:50px!important;margin:12px 0!important;border-radius:16px!important}
++.account-create h2{font-size:21px!important;margin-bottom:6px!important}
++.account-create>p{font-size:11px!important;margin-bottom:15px!important}
++.account-create input{height:44px!important}
++.account-create .creator-submit{height:44px!important}
++.bulk-account-field textarea{min-height:72px!important}
++
++/* CREATE PROFILE */
++.creator-shell{
++  height:100%!important;
++  min-height:0!important;
++  overflow:hidden!important;
++  padding:0!important;
++  display:grid!important;
++  grid-template-columns:300px minmax(0,1fr)!important;
++  gap:var(--axo-page-gap)!important;
++  align-items:stretch!important;
++}
++.creator-intro{
++  min-height:0!important;
++  padding:24px!important;
++  border:1px solid rgba(132,246,228,.09);
++  border-radius:var(--axo-page-radius);
++  background:linear-gradient(145deg,rgba(7,24,29,.83),rgba(10,16,31,.84));
++}
++.creator-intro h1{font-size:38px!important;margin:18px 0 14px!important}
++.creator-board{
++  min-height:0!important;
++  height:100%!important;
++  overflow-y:auto!important;
++  border-radius:var(--axo-page-radius)!important;
++  padding:20px!important;
++}
++.creator-board::-webkit-scrollbar{width:5px}.creator-board::-webkit-scrollbar-thumb{border-radius:20px;background:rgba(107,233,216,.22)}
++.version-carousel{grid-template-columns:repeat(5,minmax(0,1fr))!important}
++.version-carousel button{min-height:108px!important}
++
++/* MODS / MODPACK LIBRARY */
++.library-shell{
++  height:100%!important;
++  min-height:0!important;
++  overflow:hidden!important;
++  padding:0!important;
++  display:flex!important;
++  flex-direction:column!important;
++  gap:12px!important;
++}
++.library-hero{flex:none!important;border-radius:var(--axo-page-radius)!important;padding:16px 18px!important}
++.library-tabs{flex:none!important}
++.mods-bento,.discover-shell{
++  flex:1!important;
++  min-height:0!important;
++  overflow-y:auto!important;
++  overscroll-behavior:contain!important;
++  padding-right:4px!important;
++}
++.mods-bento::-webkit-scrollbar,.discover-shell::-webkit-scrollbar{width:5px}
++.mods-bento::-webkit-scrollbar-thumb,.discover-shell::-webkit-scrollbar-thumb{border-radius:20px;background:rgba(107,233,216,.22)}
++.project-grid-new{grid-template-columns:repeat(3,minmax(0,1fr))!important}
++.project-card-new{min-height:225px!important}
++
++/* SETTINGS */
++.settings-new{
++  height:100%!important;
++  min-height:0!important;
++  overflow:hidden!important;
++  padding:0!important;
++  display:grid!important;
++  grid-template-rows:auto minmax(0,1fr)!important;
++  gap:var(--axo-page-gap)!important;
++}
++.settings-new .page-heading-new{min-height:118px!important}
++.settings-bento{
++  min-height:0!important;
++  overflow-y:auto!important;
++  overscroll-behavior:contain!important;
++  align-content:start!important;
++  grid-template-columns:repeat(2,minmax(0,1fr))!important;
++  gap:12px!important;
++  padding:1px 5px 14px 1px!important;
++}
++.settings-bento::-webkit-scrollbar{width:5px}.settings-bento::-webkit-scrollbar-thumb{border-radius:20px;background:rgba(107,233,216,.22)}
++.setting-tile,.security-tile{min-height:140px!important;border-radius:20px!important;padding:18px!important}
++
++/* PARTNERS / STORE */
++.simple-page{
++  height:100%!important;
++  min-height:0!important;
++  overflow:hidden!important;
++  padding:0!important;
++  grid-template-columns:minmax(280px,360px) minmax(0,1fr)!important;
++  gap:var(--axo-page-gap)!important;
++  align-items:stretch!important;
++}
++.simple-page>div:first-child{
++  border:1px solid rgba(132,246,228,.09);
++  border-radius:var(--axo-page-radius);
++  padding:28px;
++  background:linear-gradient(145deg,rgba(7,24,29,.83),rgba(10,16,31,.84));
++  display:flex;
++  flex-direction:column;
++  justify-content:center;
++}
++.simple-page h1{font-size:38px!important;margin:10px 0 14px!important}
++.placeholder-world{min-height:0!important;height:100%!important;border-radius:var(--axo-page-radius)!important}
++
++/* resolution tuning */
++@media(max-width:1360px){
++  .profiles-new .instance-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
++  .account-layout{grid-template-columns:minmax(0,1fr) 300px!important}
++  .project-grid-new{grid-template-columns:repeat(2,minmax(0,1fr))!important}
++  .page-heading-new h1,.settings-new .page-heading-new h1{font-size:33px!important}
++  .accounts-page .page-heading-new h1{font-size:35px!important}
++}
++@media(max-width:1120px){
++  .status-chip{display:none!important}
++  .user-chip{min-width:190px!important;max-width:210px!important}
++  .account-layout{grid-template-columns:1fr!important}
++  .account-create{display:none!important}
++  .creator-shell{grid-template-columns:240px minmax(0,1fr)!important}
++  .version-carousel{grid-template-columns:repeat(3,minmax(0,1fr))!important}
++}
++@media(max-height:760px){
++  .page-heading-new{min-height:105px!important;padding:16px 22px!important}
++  .accounts-page .page-heading-new{min-height:124px!important}
++  .page-heading-new h1,.settings-new .page-heading-new h1{font-size:30px!important}
++  .accounts-page .page-heading-new h1{font-size:32px!important}
++  .account-lead{display:none!important}
++  .instance-card,.instance-create{min-height:195px!important}
++  .account-card-new{min-height:160px!important}
++}
++
++/* =========================================================
++   AXOLOT NEBULA 0.13 — FAST-INSPIRED UNIFIED DESKTOP SYSTEM
++   One shell, one scale, internal scroll only.
++   ========================================================= */
++:root{
++  --axo13-top:78px;
++  --axo13-rail:82px;
++  --axo13-gap:14px;
++  --axo13-radius:22px;
++  --axo13-panel:linear-gradient(145deg,rgba(7,20,31,.94),rgba(9,15,31,.92));
++  --axo13-line:rgba(118,228,222,.10);
++  --axo13-text:#eaf8f7;
++  --axo13-muted:#8da8b5;
++  --axo13-cyan:#69eee0;
++  --axo13-blue:#76cfff;
++  --axo13-violet:#b77cff;
++}
++
++html,body,#root,.axo-app{width:100%;height:100%;min-height:0;overflow:hidden!important}
++.axo-app{background:radial-gradient(circle at 8% 0%,rgba(45,229,210,.08),transparent 28%),radial-gradient(circle at 92% 8%,rgba(120,91,255,.10),transparent 30%),#06101a}
++
++/* Top application bar */
++.axo-topbar{
++  height:var(--axo13-top)!important;
++  margin:0!important;
++  padding:0 18px 0 20px!important;
++  border:0!important;
++  border-bottom:1px solid rgba(121,220,218,.08)!important;
++  border-radius:0!important;
++  background:rgba(4,13,24,.96)!important;
++  backdrop-filter:blur(24px)!important;
++  box-shadow:0 10px 32px rgba(0,0,0,.14)!important;
++}
++.axo-brand{min-width:240px!important;height:58px!important;gap:13px!important;padding:0 8px!important}
++.axo-logo{width:52px!important;height:44px!important}
++.axo-brand-copy strong{font-size:16px!important;letter-spacing:.03em!important}
++.axo-brand-copy small{font-size:9px!important;letter-spacing:.21em!important;color:#62eadc!important}
++.top-actions{gap:9px!important}
++.status-chip{height:42px!important;border-radius:14px!important;background:rgba(255,255,255,.025)!important}
++.user-chip{height:44px!important;min-width:210px!important;max-width:240px!important;border-radius:14px!important;background:rgba(255,255,255,.025)!important}
++.round-icon{width:44px!important;height:44px!important;border-radius:14px!important}
++
++/* Fast-client style navigation rail. It expands over content, never shifts pages. */
++.top-nav{
++  position:fixed!important;
++  z-index:110!important;
++  left:14px!important;
++  top:calc(var(--axo13-top) + 14px)!important;
++  width:var(--axo13-rail)!important;
++  height:calc(100vh - var(--axo13-top) - 28px)!important;
++  padding:10px 8px!important;
++  display:flex!important;
++  flex-direction:column!important;
++  gap:7px!important;
++  overflow:hidden!important;
++  border:1px solid var(--axo13-line)!important;
++  border-radius:24px!important;
++  background:linear-gradient(180deg,rgba(6,16,29,.96),rgba(6,13,25,.94))!important;
++  box-shadow:0 20px 55px rgba(0,0,0,.28),inset 0 1px rgba(255,255,255,.035)!important;
++  transition:width .20s cubic-bezier(.22,.8,.24,1),box-shadow .20s ease!important;
++}
++.top-nav:hover{width:184px!important;box-shadow:0 24px 80px rgba(0,0,0,.46),0 0 0 1px rgba(91,239,220,.05)!important}
++.top-nav button{
++  width:64px!important;height:60px!important;min-width:64px!important;min-height:60px!important;
++  padding:0!important;display:flex!important;flex:none!important;align-items:center!important;justify-content:center!important;
++  flex-direction:column!important;gap:5px!important;border-radius:17px!important;color:#9eb7c2!important;
++  background:transparent!important;border:1px solid transparent!important;
++  transition:width .2s cubic-bezier(.22,.8,.24,1),background .15s ease,color .15s ease,border-color .15s ease!important;
++}
++.top-nav button svg{width:21px!important;height:21px!important;flex:none!important}
++.top-nav button span{display:block!important;font-size:9px!important;font-weight:700!important;line-height:1!important;opacity:.9!important}
++.top-nav:hover button{width:166px!important;flex-direction:row!important;justify-content:flex-start!important;padding:0 16px!important;gap:12px!important}
++.top-nav:hover button span{font-size:11px!important;white-space:nowrap!important}
++.top-nav button:hover{background:rgba(102,235,220,.055)!important;color:#e7fbf7!important;border-color:rgba(112,232,221,.08)!important}
++.top-nav button.active{color:#07141a!important;background:linear-gradient(135deg,var(--axo13-cyan),#78d8f5 52%,var(--axo13-violet))!important;border-color:rgba(255,255,255,.12)!important;box-shadow:0 8px 24px rgba(74,226,218,.16),0 9px 28px rgba(167,92,255,.14)!important}
++
++/* Workspace frame */
++.axo-workspace{
++  position:relative!important;
++  height:calc(100vh - var(--axo13-top))!important;
++  min-height:0!important;
++  margin:0 0 0 108px!important;
++  padding:14px 16px 16px 4px!important;
++  overflow:hidden!important;
++  box-sizing:border-box!important;
++}
++.axo-workspace>section{width:100%!important;height:100%!important;min-width:0!important;min-height:0!important;max-width:none!important}
++.panel-glass{border-color:var(--axo13-line)!important;background:var(--axo13-panel)!important}
++
++/* Shared page header: compact desktop toolbar, not a website hero */
++.page-heading-new,.fast-page-head{
++  min-height:96px!important;height:auto!important;margin:0!important;padding:17px 20px!important;
++  display:flex!important;align-items:center!important;justify-content:space-between!important;gap:18px!important;
++  border:1px solid var(--axo13-line)!important;border-radius:var(--axo13-radius)!important;
++  background:radial-gradient(circle at 92% 10%,rgba(147,102,255,.12),transparent 27%),radial-gradient(circle at 8% 0%,rgba(73,231,211,.08),transparent 24%),var(--axo13-panel)!important;
++  overflow:hidden!important;box-sizing:border-box!important;
++}
++.fast-page-head>div:first-child{min-width:0}
++.page-heading-new h1,.fast-page-head h1,.settings-new .page-heading-new h1,.accounts-page .page-heading-new h1{
++  margin:4px 0 0!important;font-size:30px!important;line-height:1!important;letter-spacing:-.035em!important;color:var(--axo13-text)!important;max-width:none!important
++}
++.page-heading-new h1 br,.fast-page-head h1 br,.accounts-page .page-heading-new h1 br{display:none!important}
++.page-heading-new h1 em,.fast-page-head h1 em{font-style:normal!important;color:var(--axo13-text)!important}
++.page-subtitle,.account-lead{margin:6px 0 0!important;color:var(--axo13-muted)!important;font-size:11px!important;line-height:1.35!important;max-width:620px!important}
++.micro-label{font-size:8px!important;letter-spacing:.18em!important;color:#67e7da!important}
++.heading-actions{margin-left:auto!important;display:flex!important;align-items:center!important;gap:9px!important;flex:none!important}
++.search-pill{height:42px!important;min-width:260px!important;border-radius:13px!important;background:rgba(0,0,0,.19)!important;border-color:rgba(115,217,216,.10)!important}
++.accent-action{height:42px!important;border-radius:13px!important;padding:0 16px!important;font-size:12px!important}
++
++/* Play — fixed dashboard, balanced at every resolution */
++.play-v2-shell{height:100%!important;min-height:0!important;display:grid!important;grid-template-columns:minmax(560px,1fr) minmax(292px,340px)!important;gap:var(--axo13-gap)!important;overflow:hidden!important}
++.play-v2-main{min-height:0!important;border-radius:24px!important;overflow:hidden!important}
++.play-v2-copy{left:34px!important;top:32px!important;width:310px!important}
++.play-v2-copy h1{font-size:34px!important;line-height:1!important;margin:7px 0 8px!important}
++.play-v2-copy p{margin:9px 0 0!important;font-size:11px!important;line-height:1.45!important;color:#8da7b4!important}
++.nebula-badge{height:27px!important;padding:0 12px!important;border-radius:8px!important;font-size:10px!important}
++.play-v2-visual{right:2%!important;top:5%!important;width:58%!important;height:62%!important}
++.play-v2-orbit.orbit-a{width:min(34vw,360px)!important;height:min(34vw,360px)!important}
++.play-v2-orbit.orbit-b{width:min(27vw,286px)!important;height:min(27vw,286px)!important}
++.play-v2-orbit.orbit-c{width:min(20vw,214px)!important;height:min(20vw,214px)!important}
++.play-v2-actions{bottom:122px!important;gap:12px!important}
++.play-v2-launch{width:min(310px,36vw)!important;height:64px!important;border-radius:18px!important}
++.play-v2-launch svg{width:31px!important;height:31px!important}
++.play-v2-tune{width:64px!important;height:64px!important;border-radius:18px!important}
++.play-v2-profilebar{left:18px!important;right:18px!important;bottom:16px!important;min-height:88px!important;border-radius:18px!important;grid-template-columns:1.25fr 1fr 1fr .85fr!important}
++.play-v2-profilebar button{grid-template-columns:40px 1fr 14px!important;padding:0 12px!important;gap:8px!important}
++.pv2-icon{width:38px!important;height:38px!important;border-radius:12px!important}
++.play-v2-profilebar small{font-size:9px!important}.play-v2-profilebar b{font-size:12px!important}
++.play-v2-side{min-height:0!important;display:grid!important;grid-template-rows:auto auto auto minmax(0,1fr)!important;gap:11px!important;overflow:hidden!important}
++.play-v2-side>.panel-glass{border-radius:20px!important}
++.pv2-status,.pv2-tools,.pv2-performance{padding:14px!important}.pv2-card-heading h3{font-size:15px!important;margin:7px 0 10px!important}
++.pv2-tool-grid{gap:8px!important;margin-top:10px!important}.pv2-tool-grid button{height:70px!important;border-radius:15px!important;font-size:10px!important}
++.pv2-account{min-height:62px!important;border-radius:18px!important}.pv2-account-icon{width:38px!important;height:38px!important}
++.pv2-perf-grid{gap:8px!important}.pv2-perf-grid button{min-height:86px!important;border-radius:15px!important}.pv2-perf-grid button span{font-size:10px!important}
++
++/* Profiles */
++.profiles-new{height:100%!important;min-height:0!important;overflow:hidden!important;display:grid!important;grid-template-rows:auto minmax(0,1fr)!important;gap:var(--axo13-gap)!important;padding:0!important}
++.profiles-new .instance-grid{min-height:0!important;overflow-y:auto!important;overflow-x:hidden!important;display:grid!important;grid-template-columns:repeat(3,minmax(240px,1fr))!important;gap:12px!important;align-content:start!important;padding:1px 4px 12px 1px!important}
++.instance-card,.instance-create{min-height:190px!important;border-radius:20px!important}
++.instance-card{padding:15px!important}.instance-orb{width:40px!important;height:40px!important;border-radius:13px!important}.instance-copy{margin-top:14px!important}.instance-copy h3{font-size:17px!important}.instance-copy p{font-size:10px!important}.instance-stats{margin-top:10px!important;font-size:10px!important}.instance-actions{margin-top:13px!important;gap:7px!important}.instance-actions button{height:38px!important;border-radius:12px!important}.instance-create>span{width:52px!important;height:52px!important;border-radius:16px!important}.instance-create b{font-size:14px!important}.instance-create small{font-size:10px!important}
++
++/* Accounts */
++.accounts-page{height:100%!important;min-height:0!important;overflow:hidden!important;display:grid!important;grid-template-rows:auto minmax(0,1fr)!important;gap:var(--axo13-gap)!important;padding:0!important}
++.accounts-page .page-heading-new{min-height:96px!important;padding:16px 20px!important}
++.account-active-summary{min-width:260px!important;max-width:290px!important;padding:10px 12px!important;grid-template-columns:42px 1fr auto!important;border-radius:17px!important}
++.account-active-summary .user-avatar.large{width:42px!important;height:42px!important;border-radius:13px!important}
++.account-layout{height:100%!important;min-height:0!important;margin:0!important;display:grid!important;grid-template-columns:minmax(0,1fr) 320px!important;gap:var(--axo13-gap)!important;overflow:hidden!important}
++.account-library,.account-create{height:100%!important;min-height:0!important;border-radius:22px!important;padding:16px!important;box-sizing:border-box!important}
++.account-library{display:flex!important;flex-direction:column!important;overflow:hidden!important}.account-library-head{margin-bottom:9px!important}.account-library-head h2{font-size:18px!important;margin:5px 0 2px!important}.account-filter-bar{margin:6px 0 9px!important}.account-grid{flex:1!important;min-height:0!important;overflow-y:auto!important;display:grid!important;grid-template-columns:repeat(2,minmax(220px,1fr))!important;gap:10px!important;align-content:start!important;padding-right:3px!important}
++.account-card-new{min-height:150px!important;padding:13px!important;border-radius:17px!important}.account-avatar{width:38px!important;height:38px!important;border-radius:12px!important}.account-card-new h3{font-size:15px!important;margin:9px 0 3px!important}.account-card-new p{font-size:9px!important;margin-bottom:9px!important}.account-create{overflow-y:auto!important}.account-create-icon{width:44px!important;height:44px!important;margin:8px 0 10px!important;border-radius:14px!important}.account-create h2{font-size:18px!important;margin:0 0 5px!important}.account-create>p{font-size:10px!important;margin-bottom:10px!important}.account-create input{height:40px!important}.account-create .creator-submit{height:40px!important}.bulk-account-field textarea{min-height:62px!important}
++
++/* Create profile and library */
++.creator-shell{height:100%!important;min-height:0!important;display:grid!important;grid-template-columns:270px minmax(0,1fr)!important;gap:var(--axo13-gap)!important;overflow:hidden!important;padding:0!important}.creator-intro{min-height:0!important;padding:20px!important;border-radius:22px!important}.creator-intro h1{font-size:30px!important;margin:14px 0 10px!important}.creator-intro p{font-size:11px!important}.creator-board{height:100%!important;min-height:0!important;overflow-y:auto!important;padding:16px!important;border-radius:22px!important}.version-carousel{grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:8px!important}.version-carousel button{min-height:96px!important}
++.library-shell{height:100%!important;min-height:0!important;overflow:hidden!important;display:flex!important;flex-direction:column!important;gap:10px!important;padding:0!important}.library-hero{flex:none!important;padding:13px 15px!important;border-radius:20px!important}.library-tabs{flex:none!important}.mods-bento,.discover-shell{flex:1!important;min-height:0!important;overflow-y:auto!important;padding-right:3px!important}.project-grid-new{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:10px!important}.project-card-new{min-height:205px!important;border-radius:18px!important}
++
++/* Mods and Client top-level pages */
++.fast-dashboard-page{height:100%!important;min-height:0!important;overflow:hidden!important;display:grid!important;grid-template-rows:auto auto minmax(0,1fr)!important;gap:var(--axo13-gap)!important}
++.fast-dashboard-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
++.fast-feature-card{min-width:0;min-height:104px;border:1px solid var(--axo13-line);border-radius:19px;background:var(--axo13-panel);color:var(--axo13-text);display:grid;grid-template-columns:42px 1fr 18px;align-items:center;gap:11px;padding:14px;text-align:left;cursor:pointer;transition:transform .16s ease,border-color .16s ease,background .16s ease}
++.fast-feature-card:hover{transform:translateY(-2px);border-color:rgba(104,235,222,.22);background:linear-gradient(145deg,rgba(10,30,41,.94),rgba(13,19,42,.94))}.fast-feature-card>span{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;color:#72eee0;background:linear-gradient(145deg,rgba(77,232,214,.09),rgba(145,102,255,.11))}.fast-feature-card>div{min-width:0;display:flex;flex-direction:column}.fast-feature-card b{font-size:13px}.fast-feature-card small{font-size:9px;color:var(--axo13-muted);margin-top:4px;line-height:1.35}
++.fast-mod-summary{min-height:0;border-radius:22px;padding:20px;display:flex;align-items:center;justify-content:space-between;gap:18px;background:radial-gradient(circle at 70% 50%,rgba(101,85,255,.12),transparent 30%),var(--axo13-panel)!important}.fast-mod-summary h2{font-size:26px;margin:5px 0 4px}.fast-mod-summary p{font-size:11px;color:var(--axo13-muted);margin:0}.fast-mod-summary button,.core-actions button:not(.accent-action){height:40px;border-radius:12px;border:1px solid rgba(120,226,220,.10);background:rgba(255,255,255,.025);color:#dff7f4;padding:0 14px;display:flex;align-items:center;gap:7px}
++.core-state-chip{height:34px;padding:0 12px;border-radius:999px;display:flex;align-items:center;font-size:9px;font-weight:900;letter-spacing:.11em;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.025)}.core-state-chip.ready{color:#72efb6;border-color:rgba(105,235,170,.2);background:rgba(67,210,146,.08)}.core-state-chip.available{color:#6cebdc;border-color:rgba(100,235,222,.2);background:rgba(75,214,201,.07)}.core-state-chip.unsupported{color:#d2b0ff;border-color:rgba(184,128,255,.18);background:rgba(149,89,220,.07)}
++.core-layout{min-height:0;display:grid;grid-template-columns:minmax(420px,1.25fr) minmax(340px,.75fr);gap:var(--axo13-gap);overflow:hidden}.core-hero{min-height:0;border-radius:22px;display:grid;grid-template-columns:160px 1fr;align-items:center;gap:26px;padding:28px;overflow:hidden;position:relative}.core-hero:after{content:"";position:absolute;width:320px;height:320px;border-radius:50%;right:-90px;top:-120px;background:radial-gradient(circle,rgba(111,103,255,.18),transparent 68%);pointer-events:none}.core-emblem{position:relative;width:140px;height:140px;border-radius:42px;display:grid;place-items:center;background:radial-gradient(circle at 35% 30%,rgba(107,246,229,.30),rgba(99,105,255,.13) 52%,rgba(8,18,30,.8) 70%);border:1px solid rgba(106,237,224,.16);box-shadow:0 0 48px rgba(77,229,218,.09),inset 0 0 34px rgba(99,94,255,.09)}.core-emblem>span{font-size:54px;font-weight:900;color:#eafffb;z-index:2}.core-emblem i,.core-emblem b{position:absolute;border-radius:50%;border:1px solid rgba(108,233,225,.18)}.core-emblem i{inset:15px}.core-emblem b{inset:-15px;border-style:dashed}.core-copy{position:relative;z-index:2}.core-copy h2{font-size:30px;line-height:1.05;margin:8px 0 10px;max-width:450px}.core-copy p{font-size:11px;line-height:1.55;color:var(--axo13-muted);max-width:520px}.core-actions{display:flex;gap:9px;margin-top:18px}.core-feature-grid{min-height:0;overflow-y:auto;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-content:start;padding-right:3px}.core-feature{min-height:112px;border:1px solid var(--axo13-line);border-radius:18px;background:var(--axo13-panel);padding:15px;display:flex;flex-direction:column;justify-content:center}.core-feature svg{color:#70ebdc;margin-bottom:8px}.core-feature b{font-size:12px}.core-feature small{font-size:9px;line-height:1.4;color:var(--axo13-muted);margin-top:5px}
++
++/* Settings */
++.settings-new{height:100%!important;min-height:0!important;overflow:hidden!important;display:grid!important;grid-template-rows:auto minmax(0,1fr)!important;gap:var(--axo13-gap)!important;padding:0!important}.settings-bento{min-height:0!important;overflow-y:auto!important;display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:10px!important;align-content:start!important;padding:1px 4px 12px 1px!important}.setting-tile,.security-tile{min-height:126px!important;border-radius:18px!important;padding:15px!important}.setting-tile>span{font-size:9px!important}.setting-tile>b{font-size:14px!important}.setting-tile small{font-size:9px!important;line-height:1.35!important}
++
++/* Scrollbars are only inside useful content regions */
++.instance-grid,.account-grid,.account-create,.creator-board,.mods-bento,.discover-shell,.settings-bento,.core-feature-grid{overscroll-behavior:contain}
++.instance-grid::-webkit-scrollbar,.account-grid::-webkit-scrollbar,.account-create::-webkit-scrollbar,.creator-board::-webkit-scrollbar,.mods-bento::-webkit-scrollbar,.discover-shell::-webkit-scrollbar,.settings-bento::-webkit-scrollbar,.core-feature-grid::-webkit-scrollbar{width:5px}
++.instance-grid::-webkit-scrollbar-thumb,.account-grid::-webkit-scrollbar-thumb,.account-create::-webkit-scrollbar-thumb,.creator-board::-webkit-scrollbar-thumb,.mods-bento::-webkit-scrollbar-thumb,.discover-shell::-webkit-scrollbar-thumb,.settings-bento::-webkit-scrollbar-thumb,.core-feature-grid::-webkit-scrollbar-thumb{border-radius:20px;background:rgba(104,231,216,.22)}
++
++/* Responsive desktop scaling */
++@media(max-width:1320px){
++  .play-v2-shell{grid-template-columns:minmax(520px,1fr) 292px!important}
++  .profiles-new .instance-grid{grid-template-columns:repeat(2,minmax(230px,1fr))!important}
++  .account-layout{grid-template-columns:minmax(0,1fr) 285px!important}.account-grid{grid-template-columns:1fr!important}
++  .fast-dashboard-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.core-layout{grid-template-columns:minmax(390px,1fr) 320px}.project-grid-new{grid-template-columns:repeat(2,minmax(0,1fr))!important}
++}
++@media(max-width:1120px){
++  :root{--axo13-rail:76px}.axo-workspace{margin-left:100px!important}.top-nav button{width:58px!important;min-width:58px!important}.top-nav:hover{width:172px!important}.top-nav:hover button{width:154px!important}.status-chip{display:none!important}.user-chip{min-width:175px!important;max-width:195px!important}.round-icon{display:none!important}
++  .play-v2-shell{grid-template-columns:1fr!important}.play-v2-side{display:none!important}.play-v2-visual{right:0!important;width:58%!important}
++  .account-layout{grid-template-columns:1fr!important}.account-create{display:none!important}.creator-shell{grid-template-columns:230px minmax(0,1fr)!important}.version-carousel{grid-template-columns:repeat(3,minmax(0,1fr))!important}.core-layout{grid-template-columns:1fr!important}.core-feature-grid{grid-template-columns:repeat(3,minmax(0,1fr))}.core-hero{grid-template-columns:125px 1fr}.core-emblem{width:110px;height:110px;border-radius:34px}.core-emblem>span{font-size:44px}
++}
++@media(max-height:760px){
++  :root{--axo13-top:70px}.top-nav{top:82px!important;height:calc(100vh - 94px)!important}.top-nav button{height:52px!important;min-height:52px!important}.axo-workspace{height:calc(100vh - var(--axo13-top))!important;padding-top:10px!important}.page-heading-new,.fast-page-head,.accounts-page .page-heading-new{min-height:78px!important;padding:12px 17px!important}.page-heading-new h1,.fast-page-head h1,.settings-new .page-heading-new h1,.accounts-page .page-heading-new h1{font-size:25px!important}.page-subtitle,.account-lead{display:none!important}.instance-card,.instance-create{min-height:168px!important}.play-v2-copy{top:22px!important}.play-v2-copy h1{font-size:30px!important}.play-v2-visual{top:0!important;height:58%!important}.play-v2-actions{bottom:106px!important}.play-v2-profilebar{min-height:76px!important}.pv2-tool-grid button{height:58px!important}.core-feature{min-height:92px}.core-hero{padding:20px}.core-copy h2{font-size:25px}
++}
++
++/* =========================================================
++   AXOLOT NEBULA 0.14 — PRIME DENSE DESKTOP SYSTEM
++   Dense, balanced, responsive. No full-window web scrolling.
++   ========================================================= */
++:root{
++  --axo14-top:74px;
++  --axo14-rail:78px;
++  --axo14-gap:12px;
++  --axo14-radius:20px;
++  --axo14-bg:#06101a;
++  --axo14-panel:linear-gradient(145deg,rgba(7,20,31,.965),rgba(8,14,29,.95));
++  --axo14-panel2:linear-gradient(145deg,rgba(9,27,34,.92),rgba(9,16,31,.94));
++  --axo14-line:rgba(119,234,224,.105);
++  --axo14-line-strong:rgba(115,239,226,.18);
++  --axo14-muted:#8da8b5;
++  --axo14-text:#edfafa;
++  --axo14-cyan:#66ecdf;
++  --axo14-blue:#6dcdf7;
++  --axo14-violet:#b27aff;
++  --axo14-pink:#ee88c2;
++}
++
++html,body,#root,.axo-app{width:100%;height:100%;min-height:0;overflow:hidden!important}
++.axo-app{
++  background:
++    radial-gradient(circle at 4% -10%,rgba(44,232,209,.12),transparent 28%),
++    radial-gradient(circle at 96% 2%,rgba(126,92,255,.13),transparent 30%),
++    radial-gradient(circle at 54% 106%,rgba(237,103,178,.07),transparent 34%),
++    var(--axo14-bg)!important;
++}
++.biolume-field,.motion-field{opacity:.42!important}
++
++/* chrome */
++.axo-topbar{
++  height:var(--axo14-top)!important;
++  min-height:var(--axo14-top)!important;
++  padding:0 15px 0 18px!important;
++  background:rgba(4,12,22,.965)!important;
++  border-bottom:1px solid rgba(113,226,219,.07)!important;
++  box-shadow:0 12px 34px rgba(0,0,0,.18)!important;
++}
++.axo-brand{min-width:225px!important;height:54px!important;padding:0 6px!important;gap:11px!important}
++.axo-logo{width:49px!important;height:42px!important}
++.axo-brand-copy strong{font-size:15px!important}.axo-brand-copy small{font-size:8px!important}
++.top-actions{gap:8px!important}.status-chip{height:40px!important;border-radius:13px!important}.user-chip{height:42px!important;min-width:205px!important;border-radius:13px!important}.round-icon{width:42px!important;height:42px!important;border-radius:13px!important}
++
++.top-nav{
++  top:calc(var(--axo14-top) + 12px)!important;
++  left:12px!important;
++  width:var(--axo14-rail)!important;
++  height:calc(100vh - var(--axo14-top) - 24px)!important;
++  padding:9px 7px!important;
++  gap:6px!important;
++  border-radius:22px!important;
++  background:linear-gradient(180deg,rgba(6,16,28,.98),rgba(5,12,23,.97))!important;
++  border:1px solid var(--axo14-line)!important;
++  box-shadow:0 18px 48px rgba(0,0,0,.26)!important;
++  transition:width .18s cubic-bezier(.2,.8,.2,1),box-shadow .18s ease!important;
++}
++.top-nav:hover{width:174px!important;box-shadow:0 24px 74px rgba(0,0,0,.44),0 0 0 1px rgba(86,239,220,.035)!important}
++.top-nav button{width:62px!important;height:57px!important;min-width:62px!important;min-height:57px!important;border-radius:16px!important;gap:4px!important}
++.top-nav button svg{width:20px!important;height:20px!important}.top-nav button span{font-size:8px!important}
++.top-nav:hover button{width:160px!important;padding:0 14px!important;gap:11px!important}.top-nav:hover button span{font-size:10px!important}
++.top-nav button.active{background:linear-gradient(135deg,var(--axo14-cyan),var(--axo14-blue) 52%,var(--axo14-violet))!important;box-shadow:0 8px 26px rgba(82,224,216,.17),0 8px 28px rgba(160,93,255,.14)!important}
++
++.axo-workspace{
++  height:calc(100vh - var(--axo14-top))!important;
++  margin:0 0 0 102px!important;
++  padding:12px 14px 14px 3px!important;
++  overflow:hidden!important;
++}
++.axo-workspace>section{height:100%!important;min-height:0!important;width:100%!important;max-width:none!important}
++.panel-glass{background:var(--axo14-panel)!important;border:1px solid var(--axo14-line)!important;box-shadow:inset 0 1px rgba(255,255,255,.025),0 16px 42px rgba(0,0,0,.12)!important}
++
++/* shared compact page chrome */
++.page-heading-new,.fast-page-head{
++  min-height:86px!important;
++  padding:14px 18px!important;
++  border-radius:19px!important;
++  background:
++    radial-gradient(circle at 88% 0%,rgba(159,93,255,.13),transparent 25%),
++    radial-gradient(circle at 7% 0%,rgba(74,231,212,.075),transparent 24%),
++    var(--axo14-panel)!important;
++}
++.page-heading-new h1,.fast-page-head h1,.settings-new .page-heading-new h1,.accounts-page .page-heading-new h1{font-size:28px!important;margin:4px 0 0!important;line-height:1!important}
++.page-subtitle,.account-lead{font-size:10px!important;margin-top:5px!important;color:var(--axo14-muted)!important}.micro-label{font-size:7px!important;letter-spacing:.19em!important}
++.search-pill{height:39px!important;min-width:235px!important;border-radius:12px!important}.accent-action{height:39px!important;border-radius:12px!important;font-size:11px!important;padding:0 14px!important}
++
++/* PRIME HOME */
++.prime-home{
++  display:grid!important;
++  grid-template-columns:minmax(620px,1fr) minmax(286px,330px)!important;
++  gap:var(--axo14-gap)!important;
++  min-height:0!important;
++  overflow:hidden!important;
++}
++.prime-main{min-width:0;min-height:0;display:grid;grid-template-rows:minmax(0,1fr) 166px;gap:var(--axo14-gap);overflow:hidden}
++.prime-stage{min-height:0;position:relative;border-radius:24px!important;overflow:hidden!important;background:
++  linear-gradient(120deg,rgba(5,24,29,.96),rgba(7,17,31,.95) 58%,rgba(20,14,43,.90))!important}
++.prime-stage:before{content:"";position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(rgba(93,235,219,.024) 1px,transparent 1px),linear-gradient(90deg,rgba(93,235,219,.024) 1px,transparent 1px);background-size:30px 30px;mask-image:linear-gradient(to bottom,rgba(0,0,0,.75),transparent 92%)}
++.prime-stage:after{content:"";position:absolute;width:440px;height:440px;border-radius:50%;right:-120px;bottom:-170px;background:radial-gradient(circle,rgba(122,88,255,.17),transparent 66%);pointer-events:none}
++.prime-stage-head{position:relative;z-index:4;display:flex;align-items:flex-start;justify-content:space-between;padding:20px 22px 0}.prime-stage-head h1{margin:6px 0 8px;font-size:25px;line-height:1}.prime-badges{display:flex;flex-wrap:wrap;gap:6px}.prime-badges>span{height:24px;padding:0 9px;border-radius:8px;border:1px solid rgba(109,229,220,.09);display:flex;align-items:center;gap:4px;font-size:8px;font-weight:800;letter-spacing:.06em;color:#b9d0d6;background:rgba(255,255,255,.025)}.prime-badges .boost{color:#71ead5;border-color:rgba(90,231,209,.16);background:rgba(61,214,192,.06)}
++.prime-runtime{height:29px;padding:0 10px;border-radius:999px;border:1px solid rgba(255,255,255,.07);display:flex;align-items:center;gap:7px;font-size:8px;font-weight:900;letter-spacing:.1em;background:rgba(4,12,20,.6);color:#abc0c7}.prime-runtime i{width:7px;height:7px;border-radius:50%;background:#5bedaa;box-shadow:0 0 12px rgba(91,237,170,.55)}
++.prime-stage-body{position:absolute;z-index:2;left:0;right:0;top:82px;bottom:92px;display:grid;grid-template-columns:minmax(280px,.82fr) minmax(310px,1.18fr);align-items:center;padding:0 22px 0 28px;gap:18px}.prime-session-copy{z-index:4}.prime-session-copy h2{margin:12px 0 9px;font-size:clamp(31px,3vw,48px);line-height:.98;letter-spacing:-.045em;color:#effcfb}.prime-session-copy p{margin:0;color:var(--axo14-muted);font-size:10px}.prime-launch-row{display:flex;align-items:center;gap:9px;margin-top:22px}.prime-launch{width:170px;height:58px;border:0;border-radius:18px;background:linear-gradient(100deg,var(--axo14-cyan),#6bcff5 52%,var(--axo14-violet));color:#061016;display:grid;place-items:center;box-shadow:0 13px 36px rgba(91,224,218,.18),0 12px 36px rgba(156,91,255,.13);transition:transform .16s ease,filter .16s ease}.prime-launch:hover:not(:disabled){transform:translateY(-2px);filter:brightness(1.06)}.prime-tune{width:58px;height:58px;border-radius:18px;border:1px solid rgba(111,229,222,.11);background:rgba(255,255,255,.025);color:#d8efed;display:grid;place-items:center}.prime-tune:hover{background:rgba(92,231,216,.055);border-color:rgba(97,235,220,.18)}
++.prime-core-visual{position:relative;width:min(37vw,430px);height:min(37vw,430px);justify-self:center;display:grid;place-items:center}.prime-ring{position:absolute;border-radius:50%;border:1px solid rgba(107,233,222,.11)}.prime-ring.ring-one{inset:1%}.prime-ring.ring-two{inset:12%;border-style:dashed;animation:portalSpin 32s linear infinite}.prime-ring.ring-three{inset:24%;box-shadow:0 0 45px rgba(106,80,255,.08),inset 0 0 36px rgba(78,232,211,.035)}.prime-creature{transform:scale(.82)!important;filter:drop-shadow(0 18px 32px rgba(74,225,211,.16))}.prime-float-tag{position:absolute;height:24px;padding:0 9px;border-radius:8px;background:rgba(5,17,24,.78);border:1px solid rgba(104,232,220,.11);display:flex;align-items:center;font-size:7px;font-weight:900;letter-spacing:.09em;color:#9fe8dd;backdrop-filter:blur(10px)}.prime-float-tag.tag-a{left:12%;top:26%}.prime-float-tag.tag-b{right:10%;top:42%}.prime-float-tag.tag-c{right:15%;bottom:20%}
++.prime-session-strip{position:absolute;z-index:5;left:16px;right:16px;bottom:14px;height:69px;padding:6px;display:grid;grid-template-columns:1.35fr 1fr 1fr 1fr;gap:5px;border-radius:18px;border:1px solid rgba(108,232,222,.10);background:rgba(4,13,23,.78);backdrop-filter:blur(22px)}.prime-session-strip button{min-width:0;border:0;border-radius:13px;background:transparent;color:#dcefed;display:grid;grid-template-columns:32px 1fr 14px;align-items:center;gap:8px;text-align:left;padding:0 9px}.prime-session-strip button:hover{background:rgba(91,231,214,.045)}.prime-session-strip button>svg:first-child{color:#6fe9dd}.prime-session-strip span{display:flex;flex-direction:column;min-width:0}.prime-session-strip small{font-size:7px;color:#66848f;letter-spacing:.08em}.prime-session-strip b{margin-top:2px;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.prime-session-strip>button+button{border-left:1px solid rgba(255,255,255,.045)}
++
++.prime-dock{display:grid;grid-template-columns:minmax(420px,1fr) minmax(250px,.52fr);gap:var(--axo14-gap);min-height:0}.prime-quick,.prime-profile-card{border-radius:20px!important;padding:14px!important;min-height:0}.prime-card-title{display:flex;flex-direction:column;gap:3px}.prime-card-title>b{font-size:13px;color:#eaf8f6}.prime-quick-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:11px}.prime-quick-grid button{height:83px;border-radius:15px;border:1px solid rgba(255,255,255,.052);background:rgba(255,255,255,.018);color:#cfe5e3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;font-size:9px}.prime-quick-grid button svg{color:#70e9dc}.prime-quick-grid button:hover{transform:translateY(-1px);background:rgba(79,226,207,.045);border-color:rgba(96,234,219,.13)}
++.prime-profile-card{display:flex;flex-direction:column}.prime-health-row{height:28px;margin-top:6px;padding:0 8px;border-radius:9px;background:rgba(255,255,255,.018);display:flex;align-items:center;justify-content:space-between;color:#9bb2ba}.prime-health-row span{display:flex;align-items:center;gap:6px;font-size:8px}.prime-health-row span svg{color:#65dfd4}.prime-health-row b{font-size:8px;color:#bfd2d6}.prime-health-row b.good{color:#69e4b1}
++
++.prime-side{min-height:0;display:grid;grid-template-rows:160px 68px 1fr 153px;gap:var(--axo14-gap);overflow:hidden}.prime-side>*,.prime-status,.prime-core-card,.prime-performance{border-radius:20px!important}.prime-status{padding:14px;display:flex;flex-direction:column}.prime-status .pulse-bar{margin-top:15px;height:6px}.prime-status-foot{margin-top:7px;display:flex;justify-content:space-between;color:#72909a;font-size:8px}.prime-status-foot b{color:#d9eeee}.prime-status>button,.prime-core-card>button{margin-top:auto;height:34px;border-radius:11px;border:1px solid rgba(104,229,220,.10);background:rgba(255,255,255,.025);color:#d9efec;display:flex;align-items:center;justify-content:center;gap:7px;font-size:9px}.prime-account{display:grid;grid-template-columns:38px 1fr 18px;align-items:center;gap:9px;padding:0 12px;color:#e0f0ef;text-align:left}.prime-account .user-avatar{width:38px;height:38px}.prime-account>span:nth-child(2){display:flex;flex-direction:column}.prime-account small{font-size:7px;color:#64838d;letter-spacing:.1em}.prime-account b{margin-top:2px;font-size:10px}.prime-core-card{padding:14px;display:flex;flex-direction:column;overflow:hidden;position:relative;background:radial-gradient(circle at 88% 18%,rgba(159,91,255,.13),transparent 32%),var(--axo14-panel)!important}.prime-core-metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:7px;margin-top:11px}.prime-core-metrics span{height:56px;border-radius:13px;border:1px solid rgba(255,255,255,.05);background:rgba(255,255,255,.018);display:flex;flex-direction:column;align-items:center;justify-content:center}.prime-core-metrics b{font-size:17px}.prime-core-metrics small{font-size:7px;color:#73909a;letter-spacing:.08em;margin-top:2px}.prime-performance{padding:14px}.prime-perf-list{display:grid;gap:6px;margin-top:9px}.prime-perf-list>span{height:31px;display:grid;grid-template-columns:22px 1fr auto;align-items:center;padding:0 7px;border-radius:10px;background:rgba(255,255,255,.018);color:#8fa9b1}.prime-perf-list svg{color:#66dfd4}.prime-perf-list b{font-size:8px}.prime-perf-list strong{font-size:7px;color:#c0d4d5}.prime-perf-list i{width:8px;height:8px;border-radius:50%;background:#556b72}.prime-perf-list i.on{background:#5de6ab;box-shadow:0 0 9px rgba(93,230,171,.48)}
++
++/* PROFILES — dense content plus quick presets */
++.profiles-new{grid-template-rows:auto minmax(0,1fr) 72px!important;gap:10px!important}
++.profiles-new .instance-grid{padding:1px 4px 3px 1px!important;gap:10px!important;grid-template-columns:repeat(3,minmax(0,1fr))!important}
++.instance-card,.instance-create{min-height:196px!important;border-radius:18px!important}.instance-card{padding:15px!important}.instance-copy{margin-top:16px!important}.instance-copy h3{font-size:17px!important}.instance-stats{margin-top:10px!important}.instance-actions{margin-top:13px!important;gap:6px!important}.instance-play,.instance-mods,.instance-icon-action{height:37px!important;border-radius:11px!important}.instance-orb{width:40px!important;height:40px!important;border-radius:12px!important}.instance-create>span{width:50px!important;height:50px!important;border-radius:15px!important}.instance-create b{font-size:14px!important}.instance-create small{font-size:9px!important}
++.profile-template-row{min-height:0;border-radius:17px!important;padding:9px!important;display:grid;grid-template-columns:94px repeat(3,1fr);gap:7px;align-items:center}.profile-template-row>.micro-label{padding-left:7px}.profile-template-row button{height:52px;border-radius:12px;border:1px solid rgba(255,255,255,.05);background:rgba(255,255,255,.018);color:#d9edeb;display:grid;grid-template-columns:30px 1fr;align-items:center;gap:7px;padding:0 10px;text-align:left}.profile-template-row button svg{color:#6ee4d9}.profile-template-row button span{display:flex;flex-direction:column}.profile-template-row button b{font-size:9px}.profile-template-row button small{font-size:7px;color:#6f8a93;margin-top:2px}
++
++/* ACCOUNTS — compact vault */
++.accounts-page{gap:10px!important}.accounts-page .page-heading-new{min-height:94px!important}.account-active-summary{min-width:245px!important;max-width:275px!important;padding:10px 12px!important;border-radius:15px!important}.account-layout{gap:10px!important;grid-template-columns:minmax(0,1fr) 316px!important}.account-library,.account-create{padding:16px!important;border-radius:19px!important}.account-library-head{margin-bottom:9px!important}.account-library-head h2{font-size:18px!important}.account-filter-bar{margin:6px 0 9px!important}.account-filter-bar button{height:31px!important}.account-grid{gap:8px!important}.account-card-new{min-height:150px!important;padding:13px!important;border-radius:16px!important}.account-card-new h3{font-size:15px!important;margin:10px 0 3px!important}.account-card-new p{font-size:8px!important;line-height:1.35!important;margin-bottom:9px!important}.account-card-actions button{height:34px!important}.account-create-icon{width:42px!important;height:42px!important;margin:8px 0!important;border-radius:13px!important}.account-create h2{font-size:18px!important}.account-create>p{font-size:9px!important;margin-bottom:11px!important}.account-create input{height:38px!important}.account-create .creator-submit,.secondary-account-action{height:38px!important}.bulk-account-field textarea{min-height:58px!important}.microsoft-connect{padding:10px!important;border-radius:14px!important}.microsoft-connect p{font-size:8px!important}
++
++/* MODS dashboard — use the space */
++.fast-dashboard-page{gap:10px!important}.fast-dashboard-grid{grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:9px!important}.fast-feature-card{min-height:122px!important;border-radius:18px!important;padding:15px!important}.fast-feature-card>span{width:42px!important;height:42px!important;border-radius:13px!important}.fast-feature-card b{font-size:12px!important}.fast-feature-card small{font-size:8px!important}.fast-mod-summary{min-height:102px!important;border-radius:18px!important;padding:15px 18px!important}.fast-mod-summary h2{font-size:20px!important}
++
++/* CORE PRIME — full Fast feature set surfaced inside Axolot */
++.core-prime-page{height:100%;min-height:0;display:grid;grid-template-rows:auto 58px minmax(0,1fr);gap:10px;overflow:hidden}.core-prime-head{min-height:86px!important}.core-head-actions{display:flex;align-items:center;gap:8px}.core-prime-stats{min-height:0;display:grid;grid-template-columns:repeat(5,1fr);gap:7px}.core-prime-stats>div{border:1px solid var(--axo14-line);border-radius:14px;background:rgba(8,18,30,.9);padding:8px 11px;display:flex;flex-direction:column;justify-content:center;min-width:0}.core-prime-stats b{font-size:13px;color:#e8f7f5}.core-prime-stats span{font-size:7px;color:#6f8b94;letter-spacing:.07em;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.core-prime-layout{min-height:0;display:grid;grid-template-columns:minmax(390px,.8fr) minmax(0,1.2fr);gap:10px;overflow:hidden}.core-prime-main{min-height:0;padding:18px;border-radius:20px!important;display:flex;flex-direction:column;overflow:hidden;background:radial-gradient(circle at 20% 12%,rgba(69,228,211,.08),transparent 26%),radial-gradient(circle at 90% 15%,rgba(151,93,255,.12),transparent 30%),var(--axo14-panel)!important}.core-prime-brand{display:grid;grid-template-columns:116px 1fr;gap:18px;align-items:center}.core-prime-brand .core-emblem{width:108px!important;height:108px!important;border-radius:31px!important}.core-prime-brand .core-emblem>span{font-size:43px!important}.core-prime-brand h2{font-size:25px;line-height:1.02;margin:7px 0 8px;letter-spacing:-.035em}.core-prime-brand p{font-size:9px;line-height:1.45;color:var(--axo14-muted);margin:0}.core-system-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:7px;margin-top:18px}.core-system-grid>div{height:55px;border-radius:13px;border:1px solid rgba(255,255,255,.05);background:rgba(255,255,255,.018);display:grid;grid-template-columns:30px 1fr;align-items:center;gap:7px;padding:0 10px}.core-system-grid svg{color:#69e4d9}.core-system-grid span{display:flex;flex-direction:column}.core-system-grid small{font-size:7px;color:#6d8992}.core-system-grid b{font-size:9px;margin-top:2px}.core-install-note{margin-top:auto;min-height:54px;border-radius:13px;border:1px solid rgba(104,231,220,.08);background:rgba(73,218,199,.035);display:grid;grid-template-columns:28px 1fr;align-items:center;gap:7px;padding:0 10px}.core-install-note svg{color:#69e5b0}.core-install-note span{display:flex;flex-direction:column}.core-install-note b{font-size:8px}.core-install-note small{font-size:7px;color:#78949c;margin-top:2px;line-height:1.3}.core-module-catalog{min-height:0;overflow-y:auto;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-content:start;padding-right:3px;overscroll-behavior:contain}.core-module-catalog::-webkit-scrollbar{width:5px}.core-module-catalog::-webkit-scrollbar-thumb{border-radius:20px;background:rgba(105,231,217,.22)}.core-group{min-height:175px;border:1px solid var(--axo14-line);border-radius:18px;background:var(--axo14-panel);padding:13px;position:relative;overflow:hidden}.core-group:after{content:"";position:absolute;width:120px;height:120px;border-radius:50%;right:-40px;top:-45px;background:radial-gradient(circle,rgba(93,226,213,.08),transparent 68%);pointer-events:none}.core-group-render:after{background:radial-gradient(circle,rgba(167,99,255,.10),transparent 68%)}.core-group-utility:after{background:radial-gradient(circle,rgba(238,127,190,.08),transparent 68%)}.core-group-head{display:grid;grid-template-columns:38px 1fr auto;gap:8px;align-items:center}.core-group-head>span{width:38px;height:38px;border-radius:12px;background:rgba(87,226,210,.07);display:grid;place-items:center;color:#6fe7dc}.core-group-head>div{display:flex;flex-direction:column}.core-group-head b{font-size:11px}.core-group-head small{font-size:7px;color:#6b8790;margin-top:2px}.core-group-head strong{font-size:22px;color:rgba(230,250,248,.18)}.core-chip-cloud{display:flex;flex-wrap:wrap;gap:5px;margin-top:12px}.core-chip-cloud span{height:23px;padding:0 7px;border-radius:8px;border:1px solid rgba(255,255,255,.045);background:rgba(255,255,255,.018);display:flex;align-items:center;font-size:7px;color:#93abb2}
++
++/* SETTINGS — denser 3-column bento on wide windows */
++.settings-new{gap:10px!important}.settings-bento{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:9px!important;padding:1px 4px 8px 1px!important}.setting-tile,.security-tile{min-height:120px!important;border-radius:17px!important;padding:14px!important}.setting-tile>span{font-size:8px!important}.setting-tile>b{font-size:12px!important}.setting-tile small{font-size:8px!important}.setting-tile input:not([type=checkbox]):not([type=range]){height:37px!important}.health-tile{grid-column:span 2}.security-tile{grid-column:span 1}
++
++/* subtle motion, not website-like */
++.prime-stage,.prime-quick,.prime-profile-card,.prime-side>.panel-glass,.fast-feature-card,.core-group,.instance-card,.account-card-new,.setting-tile{transition:border-color .16s ease,transform .16s ease,background .16s ease,box-shadow .16s ease}.fast-feature-card:hover,.core-group:hover,.instance-card:hover,.account-card-new:hover,.setting-tile:hover{border-color:var(--axo14-line-strong)!important;box-shadow:inset 0 1px rgba(255,255,255,.03),0 14px 32px rgba(0,0,0,.16)!important}.fast-feature-card:hover{transform:translateY(-2px)}
++
++@media(max-width:1380px){
++  .prime-home{grid-template-columns:minmax(560px,1fr) 292px!important}.prime-stage-body{grid-template-columns:minmax(250px,.8fr) minmax(280px,1.2fr)}.prime-session-copy h2{font-size:38px}.prime-core-visual{width:min(36vw,375px);height:min(36vw,375px)}
++  .profiles-new .instance-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}.settings-bento{grid-template-columns:repeat(2,minmax(0,1fr))!important}.health-tile{grid-column:span 2}.fast-dashboard-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
++  .core-prime-layout{grid-template-columns:minmax(330px,.72fr) minmax(0,1.28fr)}.core-prime-brand{grid-template-columns:90px 1fr}.core-prime-brand .core-emblem{width:84px!important;height:84px!important;border-radius:26px!important}.core-prime-brand .core-emblem>span{font-size:35px!important}.core-prime-brand h2{font-size:22px}
++}
++@media(max-width:1160px){
++  .status-chip{display:none!important}.user-chip{min-width:180px!important}.prime-home{grid-template-columns:1fr!important}.prime-side{display:none!important}.prime-main{grid-template-rows:minmax(0,1fr) 150px}.profile-template-row{grid-template-columns:78px repeat(3,1fr)}.account-layout{grid-template-columns:1fr!important}.account-create{display:none!important}.core-prime-layout{grid-template-columns:1fr!important}.core-prime-main{display:none!important}.core-module-catalog{grid-template-columns:repeat(2,minmax(0,1fr))}.core-prime-stats{grid-template-columns:repeat(4,1fr)}.core-prime-stats>div:last-child{display:none}
++}
++@media(max-height:760px){
++  :root{--axo14-top:66px}.top-nav{top:77px!important;height:calc(100vh - 88px)!important}.top-nav button{height:50px!important;min-height:50px!important}.axo-workspace{height:calc(100vh - var(--axo14-top))!important;padding-top:9px!important}.page-heading-new,.fast-page-head{min-height:72px!important;padding:10px 15px!important}.page-heading-new h1,.fast-page-head h1{font-size:24px!important}.page-subtitle,.account-lead{display:none!important}.prime-main{grid-template-rows:minmax(0,1fr) 138px}.prime-stage-body{top:70px;bottom:80px}.prime-session-copy h2{font-size:34px}.prime-launch{height:52px}.prime-tune{width:52px;height:52px}.prime-session-strip{height:60px}.prime-quick-grid button{height:70px}.prime-side{grid-template-rows:142px 62px 1fr 135px}.profiles-new{grid-template-rows:auto minmax(0,1fr) 62px!important}.instance-card,.instance-create{min-height:170px!important}.profile-template-row button{height:44px}.core-prime-page{grid-template-rows:auto 48px minmax(0,1fr)}.core-prime-stats>div{padding:5px 9px}.core-group{min-height:150px}.setting-tile,.security-tile{min-height:104px!important}
++}
+--- a/src-tauri/Cargo.toml
++++ b/src-tauri/Cargo.toml
+@@ -1,6 +1,6 @@
+ [package]
+ name = "axolot-client"
+-version = "0.12.4"
++version = "0.14.0"
+ description = "Axolot Client Minecraft launcher"
+ authors = ["Axolot Client"]
+ edition = "2021"
+--- a/src-tauri/src/lib.rs
++++ b/src-tauri/src/lib.rs
+@@ -120,6 +120,15 @@
+     failed: Vec<String>,
+     preset: String,
+     message: String,
++}
++
++#[derive(Debug, Serialize)]
++struct AxolotCoreStatus {
++    supported: bool,
++    installed: bool,
++    version: String,
++    path: String,
++    detail: String,
+ }
+ 
+ #[derive(Debug, Serialize, Clone)]
+@@ -318,7 +327,10 @@
+ }
+ 
+ const AXOLOT_CORE_BYTES: &[u8] = include_bytes!("../resources/axolot-client-core.jar");
+-const USER_AGENT: &str = "AxolotClient/0.12.4 (+https://axolot.local)";
++const AXOLOT_CORE_VERSION: &str = "0.13.0";
++const AXOLOT_CORE_GAME_VERSION: &str = "1.21.4";
++const AXOLOT_CORE_FILE: &str = "axolot-core-0.14.0.jar";
++const USER_AGENT: &str = "AxolotClient/0.13.0 (+https://axolot.local)";
+ const AXOLOT_CURSEFORGE_PROXY: &str = "https://rlbgvgosxrhqnppbrtey.supabase.co/functions/v1/axolot-curseforge";
+ 
+ fn emit_progress(app: &tauri::AppHandle, stage: &str, message: impl Into<String>, percent: u8) {
+@@ -1086,6 +1098,7 @@
+     let game_dir = profile_root(&profile_id)?;
+     tokio::fs::create_dir_all(game_dir.join("mods")).await.map_err(|e| e.to_string())?;
+     tokio::fs::create_dir_all(game_dir.join("logs")).await.map_err(|e| e.to_string())?;
++    cleanup_old_axolot_core(&game_dir.join("mods"), axolot_core_supported(&game_version, &loader))?;
+ 
+     let classpath_sep = if cfg!(target_os = "windows") { ";" } else { ":" };
+     let classpath_text = classpath.iter().map(|p| p.to_string_lossy().to_string()).collect::<Vec<_>>().join(classpath_sep);
+@@ -1665,6 +1678,63 @@
+ }
+ 
+ 
++fn cleanup_old_axolot_core(dir: &Path, keep_current: bool) -> Result<(), String> {
++    let entries = match std::fs::read_dir(dir) {
++        Ok(entries) => entries,
++        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
++        Err(error) => return Err(error.to_string()),
++    };
++    for entry in entries.flatten() {
++        let path = entry.path();
++        let Some(name) = path.file_name().and_then(|x| x.to_str()) else { continue };
++        let ours = name.starts_with("axolot-core-") || name.starts_with("axolot-client-core-");
++        if !ours { continue; }
++        if keep_current && name == AXOLOT_CORE_FILE { continue; }
++        let _ = std::fs::remove_file(path);
++    }
++    Ok(())
++}
++
++fn axolot_core_supported(game_version: &str, loader: &str) -> bool {
++    loader.eq_ignore_ascii_case("fabric") && game_version == AXOLOT_CORE_GAME_VERSION
++}
++
++#[tauri::command]
++async fn get_axolot_core_status(profile_id: String, game_version: String, loader: String) -> Result<AxolotCoreStatus, String> {
++    let supported = axolot_core_supported(&game_version, &loader);
++    let path = mods_dir(&profile_id)?.join(AXOLOT_CORE_FILE);
++    let installed = path.exists();
++    let detail = if !loader.eq_ignore_ascii_case("fabric") {
++        "Axolot Core requires Fabric.".to_string()
++    } else if game_version != AXOLOT_CORE_GAME_VERSION {
++        format!("Axolot Core {AXOLOT_CORE_VERSION} currently targets Minecraft {AXOLOT_CORE_GAME_VERSION}.")
++    } else if installed {
++        "Axolot Core is installed and ready for this profile.".to_string()
++    } else {
++        "Axolot Core is compatible and can be installed for this profile.".to_string()
++    };
++    Ok(AxolotCoreStatus {
++        supported,
++        installed,
++        version: AXOLOT_CORE_VERSION.into(),
++        path: path.to_string_lossy().to_string(),
++        detail,
++    })
++}
++
++#[tauri::command]
++async fn install_axolot_core(profile_id: String, game_version: String, loader: String) -> Result<AxolotCoreStatus, String> {
++    if !axolot_core_supported(&game_version, &loader) {
++        return get_axolot_core_status(profile_id, game_version, loader).await;
++    }
++    let dir = mods_dir(&profile_id)?;
++    tokio::fs::create_dir_all(&dir).await.map_err(|e| e.to_string())?;
++    cleanup_old_axolot_core(&dir, false)?;
++    let path = dir.join(AXOLOT_CORE_FILE);
++    tokio::fs::write(&path, AXOLOT_CORE_BYTES).await.map_err(|e| format!("Không ghi được Axolot Core: {e}"))?;
++    get_axolot_core_status(profile_id, game_version, loader).await
++}
++
+ #[tauri::command]
+ async fn install_optimization_pack(profile_id: String, game_version: String, loader: String, ram_gb: f64) -> Result<OptimizationPackResult, String> {
+     if loader.to_lowercase() != "fabric" {
+@@ -1677,9 +1747,13 @@
+ 
+     let dir = mods_dir(&profile_id)?;
+     tokio::fs::create_dir_all(&dir).await.map_err(|e| e.to_string())?;
+-    tokio::fs::write(dir.join("axolot-client-core-0.6.0.jar"), AXOLOT_CORE_BYTES).await.map_err(|e| format!("Không ghi được Axolot Client Core: {e}"))?;
++    cleanup_old_axolot_core(&dir, axolot_core_supported(&game_version, &loader))?;
++    let mut installed = Vec::new();
++    if axolot_core_supported(&game_version, &loader) {
++        tokio::fs::write(dir.join(AXOLOT_CORE_FILE), AXOLOT_CORE_BYTES).await.map_err(|e| format!("Không ghi được Axolot Core: {e}"))?;
++        installed.push(format!("Axolot Core {}", AXOLOT_CORE_VERSION));
++    }
+     let client = reqwest::Client::new();
+-    let mut installed = vec!["Axolot Client Core 0.6.0".to_string()];
+     let mut failed = Vec::new();
+     for project in projects {
+         match install_modrinth_mod_for_profile(&client, &profile_id, project, &game_version, &loader).await {
+@@ -1974,6 +2048,8 @@
+             search_curseforge,
+             install_curseforge_project,
+             install_optimization_pack,
++            get_axolot_core_status,
++            install_axolot_core,
+             begin_microsoft_login,
+             complete_microsoft_login,
+             restore_microsoft_session,
+--- a/src-tauri/tauri.conf.json
++++ b/src-tauri/tauri.conf.json
+@@ -1,7 +1,7 @@
+ {
+   "$schema": "https://schema.tauri.app/config/2",
+   "productName": "Axolot Client",
+-  "version": "0.12.4",
++  "version": "0.14.0",
+   "identifier": "gg.axolot.client",
+   "build": {
+     "beforeDevCommand": "npm run dev",
+@@ -12,14 +12,15 @@
+   "app": {
+     "windows": [
+       {
+-        "title": "Axolot Client \u2014 Release Candidate 0.12.4",
+-        "width": 1360,
+-        "height": 820,
+-        "minWidth": 1080,
++        "title": "Axolot Client \u2014 Release Candidate 0.14.0",
++        "width": 1500,
++        "height": 900,
++        "minWidth": 1100,
+         "minHeight": 700,
+         "resizable": true,
+         "fullscreen": false,
+-        "decorations": true
++        "decorations": true,
++        "maximized": false
+       }
+     ],
+     "security": {
