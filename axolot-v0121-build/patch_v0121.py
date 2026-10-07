@@ -72,6 +72,7 @@ old = """            <h2>{microsoftError ? 'Microsoft signed in, but Minecraft c
             <p>{microsoftError ? 'Axolot reached an error after or during Microsoft authorization. The exact backend response is shown below.' : 'Open Microsoft sign-in and enter this one-time code. Axolot will continue through Xbox and Minecraft Services automatically.'}</p>
             {!microsoftError && <button className="device-code" onClick={()=>navigator.clipboard?.writeText(microsoftDevice.user_code)}>{microsoftDevice.user_code}</button>}
             {microsoftError && <div className="microsoft-error-box"><b>LOGIN DIAGNOSTIC</b><span>{microsoftError}</span></div>}
+            {!microsoftError && <div className="microsoft-progress"><span style={{width:`${microsoftPercent}%`}}/><i>{microsoftPercent}%</i></div>}
             <div className="microsoft-modal-actions">
               {microsoftError ? (
                 <>
