@@ -1,0 +1,90 @@
+name: Release Axolot Client 0.12.4
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'axolot-build/v0.12.4/READY'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rebuild source archive
+        shell: pwsh
+        run: |
+          $parts = Get-ChildItem "axolot-build/v0.12.4/part*.txt" | Sort-Object Name
+          if (-not $parts) { throw "Axolot source chunks are missing" }
+          $base64 = ($parts | ForEach-Object { (Get-Content -Raw $_.FullName).Trim() }) -join ""
+          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\axolot-0.12.4.zip", [Convert]::FromBase64String($base64))
+          Expand-Archive "$env:RUNNER_TEMP\axolot-0.12.4.zip" -DestinationPath "axolot-src" -Force
+          if (-not (Test-Path "axolot-src\Axolot-Client-v0.12.4\package.json")) { throw "Source archive layout is invalid" }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        working-directory: axolot-src/Axolot-Client-v0.12.4
+        run: npm install
+
+      - name: Verify frontend
+        working-directory: axolot-src/Axolot-Client-v0.12.4
+        run: npm run build
+
+      - name: Verify Rust backend
+        working-directory: axolot-src/Axolot-Client-v0.12.4/src-tauri
+        run: cargo check
+
+      - name: Build Windows NSIS installer
+        working-directory: axolot-src/Axolot-Client-v0.12.4
+        run: npm run tauri build -- --bundles nsis
+
+      - name: Prepare release assets
+        id: release
+        shell: pwsh
+        run: |
+          $work = "axolot-src\Axolot-Client-v0.12.4"
+          $version = (Get-Content -Raw "$work\package.json" | ConvertFrom-Json).version
+          $tag = "axolot-v$version"
+          $source = Get-ChildItem "$work\src-tauri\target\release\bundle\nsis\*.exe" | Select-Object -First 1
+          if (-not $source) { throw "NSIS installer not found" }
+          $installer = "Axolot-Client-Setup-$version.exe"
+          Copy-Item $source.FullName $installer
+          Copy-Item "$env:RUNNER_TEMP\axolot-0.12.4.zip" "Axolot-Client-v$version-Source.zip"
+          $sha = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLower()
+          $download = "https://rlbgvgosxrhqnppbrtey.supabase.co/storage/v1/object/public/axolot-releases/stable/$installer"
+          @{
+            version = $version
+            download_url = $download
+            sha256 = $sha
+            notes = "Axolot 0.12.4 desktop shell: fixed launcher layout, icon launch control and hands-free verified updates."
+            mandatory = $false
+          } | ConvertTo-Json | Set-Content -Encoding UTF8 axolot-update.json
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "installer=$installer" >> $env:GITHUB_OUTPUT
+
+      - name: Publish staging release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          target_commitish: main
+          name: Axolot Client ${{ steps.release.outputs.version }} RC
+          body: |
+            Axolot Client 0.12.4 desktop launcher update.
+            The public updater manifest points to the Supabase stable release channel.
+          make_latest: true
+          files: |
+            ${{ steps.release.outputs.installer }}
+            axolot-update.json
+            Axolot-Client-v${{ steps.release.outputs.version }}-Source.zip
