@@ -1,0 +1,106 @@
+name: Build and Release Axolot Client v0.12.2
+
+on:
+  push:
+    branches:
+      - axolot-v0122-multi-account-build-20261007
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reconstruct source
+        shell: pwsh
+        run: |
+          $parts = 0..9 | ForEach-Object { Get-Content -Raw ("axolot-v0122-build/payload.part{0:D2}" -f $_) }
+          $b64 = $parts -join ""
+          [IO.File]::WriteAllBytes("axolot-v0122-build/source.zip", [Convert]::FromBase64String($b64))
+          $sha = (Get-FileHash "axolot-v0122-build/source.zip" -Algorithm SHA256).Hash.ToLower()
+          if ($sha -ne "d31d4a38805684e65b477ae2c05cf944894347525767f7f2eb1e569255484861") { throw "Source ZIP SHA mismatch: $sha" }
+          New-Item -ItemType Directory -Force -Path "axolot-v0122-build/unpacked" | Out-Null
+          Expand-Archive -Path "axolot-v0122-build/source.zip" -DestinationPath "axolot-v0122-build/unpacked" -Force
+          $src = Get-ChildItem "axolot-v0122-build/unpacked" -Directory | Select-Object -First 1
+          Move-Item $src.FullName "axolot-v0122-build/source"
+
+      - name: Verify v0.12.2 source
+        shell: pwsh
+        run: |
+          $pkg = Get-Content -Raw "axolot-v0122-build/source/package.json"
+          $cfg = Get-Content -Raw "axolot-v0122-build/source/src-tauri/tauri.conf.json"
+          $main = Get-Content -Raw "axolot-v0122-build/source/src/main.tsx"
+          $rust = Get-Content -Raw "axolot-v0122-build/source/src-tauri/src/lib.rs"
+          if ($pkg -notmatch '"version"\s*:\s*"0.12.2"') { throw "Wrong package version" }
+          if ($cfg -notmatch 'Release Candidate 0.12.2') { throw "Wrong Tauri title" }
+          if ($main -notmatch 'Unlimited account vault') { throw "Multi-account UI missing" }
+          if ($main -notmatch 'Add multiple accounts') { throw "Bulk offline account UI missing" }
+          if ($main -notmatch 'Connect another') { throw "Multi Microsoft account UI missing" }
+          if ($rust -notmatch 'restore_microsoft_session') { throw "Microsoft session restore missing" }
+          if ($rust -notmatch 'microsoft_logout') { throw "Microsoft account logout missing" }
+          if ($rust -notmatch 'install_launcher_update') { throw "Updater missing" }
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        working-directory: axolot-v0122-build/source
+        run: npm install
+
+      - name: Build frontend
+        working-directory: axolot-v0122-build/source
+        run: npm run build
+
+      - name: Cargo check
+        working-directory: axolot-v0122-build/source/src-tauri
+        run: cargo check
+
+      - name: Build NSIS installer
+        working-directory: axolot-v0122-build/source
+        run: npm run tauri build -- --bundles nsis
+
+      - name: Prepare release files
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "axolot-v0122-build/source/src-tauri/target/release/bundle/nsis/*.exe" | Select-Object -First 1
+          if (-not $installer) { throw "NSIS installer not found" }
+          Copy-Item $installer.FullName "axolot-v0122-build/Axolot-Client-Setup-0.12.2-RC.exe"
+          $exeSha = (Get-FileHash "axolot-v0122-build/Axolot-Client-Setup-0.12.2-RC.exe" -Algorithm SHA256).Hash.ToLower()
+          $manifest = @{
+            version = "0.12.2"
+            download_url = "https://github.com/DiskiiVn/Craftopia-bot/releases/download/axolot-v0.12.2/Axolot-Client-Setup-0.12.2-RC.exe"
+            sha256 = $exeSha
+            notes = "Axolot Client 0.12.2: unlimited Offline/Crack and Microsoft account vault, bulk offline account import, per-account Microsoft refresh sessions in Windows Credential Manager, quick switching, premium motion polish, real mod catalogs, AutoBoost, crash center and verified automatic updater."
+            mandatory = $false
+          } | ConvertTo-Json -Depth 5
+          Set-Content -Path "axolot-v0122-build/axolot-update.json" -Value $manifest -Encoding UTF8
+          Write-Host "Installer SHA256: $exeSha"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Axolot-Client-v0.12.2-Release-Candidate
+          path: |
+            axolot-v0122-build/Axolot-Client-Setup-0.12.2-RC.exe
+            axolot-v0122-build/axolot-update.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete axolot-v0.12.2 --repo "${{ github.repository }}" --yes 2>$null
+          git push origin :refs/tags/axolot-v0.12.2 2>$null
+          gh release create axolot-v0.12.2 "axolot-v0122-build/Axolot-Client-Setup-0.12.2-RC.exe" "axolot-v0122-build/axolot-update.json" "axolot-v0122-build/source.zip#Axolot-Client-v0.12.2-Source.zip" --repo "${{ github.repository }}" --title "Axolot Client v0.12.2 RC" --notes "Multi-account release: unlimited Offline/Crack identities, multiple Microsoft accounts with separate secure refresh sessions, bulk account creation, one-click active account switching, cinematic UI motion, real mod catalogs, AutoBoost, live console, crash center and automatic verified updates."
