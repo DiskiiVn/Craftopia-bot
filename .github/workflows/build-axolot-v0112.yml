@@ -1,0 +1,301 @@
+name: Build and Publish Axolot v0.11.2 Microsoft Fix
+
+on:
+  push:
+    branches:
+      - axolot-v0112-fix-build-20261007
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reconstruct Axolot v0.11 base source
+        shell: pwsh
+        run: |
+          $parts = 0..7 | ForEach-Object { Get-Content -Raw ("axolot-v011-base/payload.part{0:D2}" -f $_) }
+          $b64 = $parts -join ""
+          [IO.File]::WriteAllBytes("axolot-v011-base/payload.zip", [Convert]::FromBase64String($b64))
+          New-Item -ItemType Directory -Force -Path "axolot-v011-base/source-root" | Out-Null
+          Expand-Archive -Path "axolot-v011-base/payload.zip" -DestinationPath "axolot-v011-base/source-root" -Force
+          $entries = Get-ChildItem "axolot-v011-base/source-root"
+          $dirs = @($entries | Where-Object { $_.PSIsContainer })
+          if ($dirs.Count -eq 1 -and (Test-Path (Join-Path $dirs[0].FullName "package.json"))) {
+            Move-Item $dirs[0].FullName "axolot-v011-base/source"
+          } else {
+            New-Item -ItemType Directory -Force -Path "axolot-v011-base/source" | Out-Null
+            Get-ChildItem "axolot-v011-base/source-root" | Move-Item -Destination "axolot-v011-base/source"
+          }
+
+      - name: Apply v0.11.1 cloud-admin layer
+        shell: pwsh
+        run: |
+          $patch = @(
+            Get-Content -Raw "axolot-v011-base/apply_cloud.part00"
+            Get-Content -Raw "axolot-v011-base/apply_cloud.part01"
+            Get-Content -Raw "axolot-v011-base/apply_cloud.part02"
+          ) -join ""
+          Set-Content -Path "axolot-v011-base/apply_cloud_admin.py" -Value $patch -Encoding UTF8
+          python "axolot-v011-base/apply_cloud_admin.py"
+
+      - name: Apply Microsoft sign-in fix v0.11.2
+        shell: pwsh
+        run: |
+          $code = @'
+          from pathlib import Path
+          root=Path("axolot-v011-base/source")
+
+          for rel in ["package.json","src-tauri/Cargo.toml","src-tauri/tauri.conf.json"]:
+              p=root/rel
+              s=p.read_text(encoding="utf-8")
+              s=s.replace("0.11.1","0.11.2")
+              s=s.replace("Release Candidate 0.11.1","Release Candidate 0.11.2")
+              p.write_text(s,encoding="utf-8")
+
+          p=root/"src/main.tsx"
+          s=p.read_text(encoding="utf-8")
+          s=s.replace("  CheckCircle2,\n  Wifi,", "  CheckCircle2,\n  RefreshCw,\n  Wifi,")
+          s=s.replace(
+              "  const [microsoftDevice, setMicrosoftDevice] = React.useState<MicrosoftDeviceCode | null>(null);",
+              "  const [microsoftDevice, setMicrosoftDevice] = React.useState<MicrosoftDeviceCode | null>(null);\n  const [microsoftError, setMicrosoftError] = React.useState('');\n  const [microsoftStage, setMicrosoftStage] = React.useState('');"
+          )
+
+          old = """    setMicrosoftBusy(true);
+              setStatus('Starting Microsoft secure sign-in...');
+              try {
+                const device = await invoke<MicrosoftDeviceCode>('begin_microsoft_login', { clientId });
+                setMicrosoftDevice(device);
+                setStatus(`Microsoft sign-in code: ${device.user_code}`);
+                void invoke('open_external_url', { url: device.verification_uri }).catch(() => undefined);
+                const result = await invoke<MicrosoftLoginResult>('complete_microsoft_login', {
+                  clientId,
+                  deviceCode: device.device_code,
+                  expiresIn: device.expires_in,
+                  interval: device.interval,
+                });
+                const next: LauncherAccount = {
+                  id: result.account_id, username: result.username, kind: 'microsoft', createdAt: Date.now(), uuid: result.uuid, xuid: result.xuid,
+                };
+                setAccounts((current) => {
+                  const existing = current.findIndex((item) => item.id === next.id);
+                  if (existing < 0) return [...current, next];
+                  return current.map((item) => item.id === next.id ? { ...item, ...next } : item);
+                });
+                setActiveAccountId(next.id);
+                setMicrosoftDevice(null);
+                setStatus(`Signed in with Microsoft as ${result.username}.`);
+              } catch (error) {
+                setStatus(String(error).replace(/^Error: /, ''));
+              } finally {
+                setMicrosoftBusy(false);
+              }"""
+          new = """    setMicrosoftBusy(true);
+              setMicrosoftError('');
+              setMicrosoftStage('Requesting a secure Microsoft device code…');
+              setStatus('Starting Microsoft secure sign-in...');
+              try {
+                const device = await invoke<MicrosoftDeviceCode>('begin_microsoft_login', { clientId });
+                setMicrosoftDevice(device);
+                setMicrosoftStage('Waiting for Microsoft authorization, then Xbox and Minecraft verification…');
+                setStatus(`Microsoft sign-in code: ${device.user_code}`);
+                void invoke('open_external_url', { url: device.verification_uri }).catch(() => undefined);
+                const result = await invoke<MicrosoftLoginResult>('complete_microsoft_login', {
+                  clientId,
+                  deviceCode: device.device_code,
+                  expiresIn: device.expires_in,
+                  interval: device.interval,
+                });
+                setMicrosoftStage('Minecraft profile verified. Finishing sign-in…');
+                const next: LauncherAccount = {
+                  id: result.account_id, username: result.username, kind: 'microsoft', createdAt: Date.now(), uuid: result.uuid, xuid: result.xuid,
+                };
+                setAccounts((current) => {
+                  const existing = current.findIndex((item) => item.id === next.id);
+                  if (existing < 0) return [...current, next];
+                  return current.map((item) => item.id === next.id ? { ...item, ...next } : item);
+                });
+                setActiveAccountId(next.id);
+                setMicrosoftDevice(null);
+                setMicrosoftError('');
+                setMicrosoftStage('');
+                setStatus(`Signed in with Microsoft as ${result.username}.`);
+              } catch (error) {
+                const message = String(error).replace(/^Error: /, '');
+                setMicrosoftError(message);
+                setMicrosoftStage('Sign-in stopped. See the exact error below.');
+                setStatus(message);
+              } finally {
+                setMicrosoftBusy(false);
+              }"""
+          if old not in s:
+              raise RuntimeError("Microsoft connect block not found")
+          s=s.replace(old,new)
+
+          old_overlay = """      {microsoftDevice && (
+                <div className="microsoft-overlay">
+                  <div className="microsoft-dialog panel-glass">
+                    <span className="micro-label">MICROSOFT SECURE SIGN-IN</span>
+                    <div className="microsoft-orb"><ShieldCheck size={30}/></div>
+                    <h2>Link your Minecraft account</h2>
+                    <p>Open Microsoft sign-in and enter this one-time code. Axolot is waiting securely in the background.</p>
+                    <button className="device-code" onClick={()=>navigator.clipboard?.writeText(microsoftDevice.user_code)}>{microsoftDevice.user_code}</button>
+                    <div className="microsoft-modal-actions">
+                      <button className="accent-action" onClick={()=>void invoke('open_external_url',{url:microsoftDevice.verification_uri})}><LogIn size={15}/> Open Microsoft</button>
+                      <button onClick={()=>navigator.clipboard?.writeText(microsoftDevice.user_code)}>Copy code</button>
+                    </div>
+                    <small>{microsoftBusy ? 'Waiting for Microsoft authorization…' : microsoftDevice.message}</small>
+                  </div>
+                </div>
+              )}"""
+          new_overlay = """      {microsoftDevice && (
+                <div className="microsoft-overlay">
+                  <div className={`microsoft-dialog panel-glass ${microsoftError ? 'has-error' : ''}`}>
+                    <span className="micro-label">MICROSOFT SECURE SIGN-IN</span>
+                    <div className="microsoft-orb">{microsoftError ? <AlertTriangle size={30}/> : <ShieldCheck size={30}/>}</div>
+                    <h2>{microsoftError ? 'Microsoft signed in, but Minecraft could not finish' : 'Link your Minecraft account'}</h2>
+                    <p>{microsoftError ? 'Axolot reached an error after or during Microsoft authorization. The exact backend response is shown below.' : 'Open Microsoft sign-in and enter this one-time code. Axolot will continue through Xbox and Minecraft Services automatically.'}</p>
+                    {!microsoftError && <button className="device-code" onClick={()=>navigator.clipboard?.writeText(microsoftDevice.user_code)}>{microsoftDevice.user_code}</button>}
+                    {microsoftError && <div className="microsoft-error-box"><b>LOGIN DIAGNOSTIC</b><span>{microsoftError}</span></div>}
+                    <div className="microsoft-modal-actions">
+                      {microsoftError ? (
+                        <>
+                          <button className="accent-action" onClick={()=>{setMicrosoftDevice(null);setMicrosoftError('');setMicrosoftStage('');void connectMicrosoftAccount();}}><RefreshCw size={15}/> Try again</button>
+                          <button onClick={()=>{setMicrosoftDevice(null);setMicrosoftError('');setMicrosoftStage('');}}>Close</button>
+                        </>
+                      ) : (
+                        <>
+                          <button className="accent-action" onClick={()=>void invoke('open_external_url',{url:microsoftDevice.verification_uri})}><LogIn size={15}/> Open Microsoft</button>
+                          <button onClick={()=>navigator.clipboard?.writeText(microsoftDevice.user_code)}>Copy code</button>
+                        </>
+                      )}
+                    </div>
+                    <small>{microsoftStage || (microsoftBusy ? 'Waiting for Microsoft authorization…' : microsoftDevice.message)}</small>
+                  </div>
+                </div>
+              )}"""
+          if old_overlay not in s:
+              raise RuntimeError("Microsoft overlay block not found")
+          s=s.replace(old_overlay,new_overlay)
+          p.write_text(s,encoding="utf-8")
+
+          p=root/"src/styles.css"
+          s=p.read_text(encoding="utf-8")
+          s += """
+          .microsoft-dialog.has-error{border-color:rgba(255,112,139,.28);box-shadow:0 40px 120px rgba(0,0,0,.52),0 0 70px rgba(255,91,128,.08)}
+          .microsoft-dialog.has-error .microsoft-orb{color:#ffb2c0;background:linear-gradient(145deg,rgba(255,102,132,.14),rgba(151,119,255,.12));border-color:rgba(255,126,151,.18)}
+          .microsoft-error-box{margin:20px 0 14px;padding:14px 15px;border-radius:14px;text-align:left;border:1px solid rgba(255,116,143,.20);background:rgba(255,76,111,.07);display:grid;gap:7px;max-height:180px;overflow:auto}
+          .microsoft-error-box b{font-size:9px;letter-spacing:.15em;color:#ff9eb1}.microsoft-error-box span{font-size:10px;line-height:1.55;color:#ffd5dd;word-break:break-word}
+          """
+          p.write_text(s,encoding="utf-8")
+
+          p=root/"src-tauri/src/lib.rs"
+          s=p.read_text(encoding="utf-8")
+          s=s.replace(
+              '            _ => return Err(value.get("error_description").and_then(Value::as_str).unwrap_or("Microsoft token exchange failed.").to_string()),',
+              '''            other => {
+                      let description = value.get("error_description").and_then(Value::as_str).unwrap_or("Microsoft token exchange failed.");
+                      return Err(format!("Microsoft OAuth error {}: {}", if other.is_empty() { "unknown" } else { other }, description));
+                  },'''
+          )
+
+          old_rust = """    let minecraft_auth: Value = client.post("https://api.minecraftservices.com/authentication/login_with_xbox")
+                  .json(&serde_json::json!({"identityToken": format!("XBL3.0 x={uhs};{xsts_token}")}))
+                  .send().await.map_err(|e| e.to_string())?.error_for_status().map_err(|e| format!("Minecraft Services login failed: {e}"))?
+                  .json().await.map_err(|e| e.to_string())?;
+              let mc_token = minecraft_auth.get("access_token").and_then(Value::as_str).ok_or("Minecraft Services response missing access token")?.to_string();"""
+          new_rust = """    let minecraft_response = client.post("https://api.minecraftservices.com/authentication/login_with_xbox")
+                  .json(&serde_json::json!({"identityToken": format!("XBL3.0 x={uhs};{xsts_token}")}))
+                  .send().await.map_err(|e| format!("Minecraft Services network error: {e}"))?;
+              let minecraft_status = minecraft_response.status();
+              let minecraft_text = minecraft_response.text().await.map_err(|e| format!("Could not read Minecraft Services response: {e}"))?;
+              if !minecraft_status.is_success() {
+                  let parsed: Value = serde_json::from_str(&minecraft_text).unwrap_or(Value::Null);
+                  let detail = parsed.get("errorMessage").and_then(Value::as_str)
+                      .or_else(|| parsed.get("error").and_then(Value::as_str))
+                      .or_else(|| parsed.get("message").and_then(Value::as_str))
+                      .unwrap_or(minecraft_text.as_str());
+                  let lower = detail.to_ascii_lowercase();
+                  if minecraft_status.as_u16() == 403 && (lower.contains("invalid app registration") || lower.contains("app registration")) {
+                      return Err("Microsoft authorization succeeded, but Minecraft Services rejected this Axolot Client ID with HTTP 403: Invalid app registration. Your Entra Client ID must be approved/allowlisted by Minecraft before third-party Premium login can finish. This is not a password or Device Code problem.".into());
+                  }
+                  return Err(format!("Minecraft Services login failed (HTTP {}): {}", minecraft_status.as_u16(), detail.chars().take(500).collect::<String>()));
+              }
+              let minecraft_auth: Value = serde_json::from_str(&minecraft_text).map_err(|e| format!("Minecraft Services returned invalid JSON: {e}"))?;
+              let mc_token = minecraft_auth.get("access_token").and_then(Value::as_str).ok_or("Minecraft Services response missing access token")?.to_string();"""
+          if old_rust not in s:
+              raise RuntimeError("Minecraft auth block not found")
+          s=s.replace(old_rust,new_rust)
+          p.write_text(s,encoding="utf-8")
+          '@
+          Set-Content -Path "axolot-v011-base/apply_v0112.py" -Value $code -Encoding UTF8
+          python "axolot-v011-base/apply_v0112.py"
+
+      - name: Verify v0.11.2 source
+        shell: pwsh
+        run: |
+          $pkg = Get-Content -Raw "axolot-v011-base/source/package.json"
+          $cfg = Get-Content -Raw "axolot-v011-base/source/src-tauri/tauri.conf.json"
+          $main = Get-Content -Raw "axolot-v011-base/source/src/main.tsx"
+          $rust = Get-Content -Raw "axolot-v011-base/source/src-tauri/src/lib.rs"
+          if ($pkg -notmatch '"version"\s*:\s*"0.11.2"') { throw "Wrong package version" }
+          if ($cfg -notmatch 'Release Candidate 0.11.2') { throw "Wrong app title" }
+          if ($main -notmatch 'LOGIN DIAGNOSTIC') { throw "Microsoft diagnostics UI missing" }
+          if ($rust -notmatch 'Invalid app registration') { throw "Minecraft app registration diagnostic missing" }
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        working-directory: axolot-v011-base/source
+        run: npm install
+
+      - name: Build NSIS installer
+        working-directory: axolot-v011-base/source
+        run: npm run tauri build -- --bundles nsis
+
+      - name: Prepare release files
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem "axolot-v011-base/source/src-tauri/target/release/bundle/nsis/*.exe" | Select-Object -First 1
+          Copy-Item $exe.FullName "Axolot-Client-Setup-0.11.2-RC.exe"
+          $sha = (Get-FileHash "Axolot-Client-Setup-0.11.2-RC.exe" -Algorithm SHA256).Hash.ToLower()
+          $manifest = @{
+            version = "0.11.2"
+            download_url = "https://github.com/DiskiiVn/Craftopia-bot/releases/download/axolot-v0.11.2/Axolot-Client-Setup-0.11.2-RC.exe"
+            sha256 = $sha
+            notes = "Microsoft Device Code diagnostics fix: exact OAuth/Xbox/Minecraft errors, HTTP 403 Invalid app registration detection, Retry/Close UI."
+          } | ConvertTo-Json -Depth 4
+          Set-Content -Path "axolot-update.json" -Value $manifest -Encoding UTF8
+          Write-Host "SHA256=$sha"
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "axolot-v0.11.2" --repo "${{ github.repository }}" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release delete "axolot-v0.11.2" --repo "${{ github.repository }}" --yes --cleanup-tag
+          }
+          gh release create "axolot-v0.11.2" "Axolot-Client-Setup-0.11.2-RC.exe" "axolot-update.json" --repo "${{ github.repository }}" --title "Axolot Client v0.11.2 RC" --notes "Fixes Microsoft sign-in diagnostics and exposes Minecraft Services rejection instead of leaving the launcher stuck on Waiting."
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Axolot-Client-v0.11.2-Microsoft-Fix
+          path: |
+            Axolot-Client-Setup-0.11.2-RC.exe
+            axolot-update.json
+          if-no-files-found: error
+          retention-days: 7
