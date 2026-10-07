@@ -1,0 +1,1 @@
+Axolot Client 0.15.0 Nova release inputs are complete. Build and publish.
