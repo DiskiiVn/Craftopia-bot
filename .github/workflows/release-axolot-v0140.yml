@@ -23,8 +23,12 @@ jobs:
           Invoke-WebRequest "https://github.com/DiskiiVn/Craftopia-bot/releases/download/axolot-v0.12.4/Axolot-Client-v0.12.4-Source.zip" -OutFile "$env:RUNNER_TEMP\base.zip"
           Expand-Archive "$env:RUNNER_TEMP\base.zip" -DestinationPath "work" -Force
           Rename-Item "work\Axolot-Client-v0.12.4" "Axolot-Client-v0.14.0"
-          git apply --check --unsafe-paths --directory="work/Axolot-Client-v0.14.0" "axolot-build/v0.14.0/Axolot-v0.14.0-Launcher.patch"
-          git apply --unsafe-paths --directory="work/Axolot-Client-v0.14.0" "axolot-build/v0.14.0/Axolot-v0.14.0-Launcher.patch"
+          $parts = Get-ChildItem "axolot-build/v0.14.0/patch-chunks/part*.b64" | Sort-Object Name
+          if ($parts.Count -ne 12) { throw "Expected 12 Axolot 0.14.0 patch chunks, found $($parts.Count)" }
+          $patch64 = ($parts | ForEach-Object { (Get-Content -Raw $_.FullName).Trim() }) -join ""
+          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\Axolot-v0.14.0-Launcher.patch", [Convert]::FromBase64String($patch64))
+          git apply --check --unsafe-paths --directory="work/Axolot-Client-v0.14.0" "$env:RUNNER_TEMP\Axolot-v0.14.0-Launcher.patch"
+          git apply --unsafe-paths --directory="work/Axolot-Client-v0.14.0" "$env:RUNNER_TEMP\Axolot-v0.14.0-Launcher.patch"
 
       - name: Prepare Axolot Core from Fast Client source
         shell: pwsh
