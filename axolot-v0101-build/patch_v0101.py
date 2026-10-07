@@ -147,7 +147,7 @@ if account_old not in s:
     raise SystemExit("account pill needle not found")
 s = s.replace(account_old, account_new)
 
-s = s.replace(r"\\`", "`").replace(r"\\${", "${")
+s = s.replace(chr(92) + "`", "`").replace(chr(92) + "${", "${")
 main.write_text(s, encoding="utf-8")
 
 css = r'''
