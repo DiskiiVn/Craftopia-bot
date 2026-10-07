@@ -1,11 +1,11 @@
-name: Release Axolot Client 0.15.0
+name: Release Axolot Client 0.15.0 Nova
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
-      - 'axolot-build/v0.15.0/BUILD-READY.txt'
+      - 'axolot-build/v0.15.0/BUILD-READY-NOVA.txt'
       - '.github/workflows/release-axolot-v0150.yml'
 
 permissions:
@@ -17,18 +17,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download launcher base
+      - name: Reconstruct Nova source
         shell: pwsh
         run: |
           Invoke-WebRequest "https://github.com/DiskiiVn/Craftopia-bot/releases/download/axolot-v0.12.4/Axolot-Client-v0.12.4-Source.zip" -OutFile "$env:RUNNER_TEMP\base.zip"
           Expand-Archive "$env:RUNNER_TEMP\base.zip" -DestinationPath "work" -Force
           Rename-Item "work\Axolot-Client-v0.12.4" "Axolot-Client-v0.15.0"
-          $parts = Get-ChildItem "axolot-build/v0.15.0/patch-chunks/part*.b64" | Sort-Object Name
-          if ($parts.Count -ne 38) { throw "Expected 38 Axolot 0.15.0 patch chunks, found $($parts.Count)" }
+
+          $parts = Get-ChildItem "axolot-build/v0.15.0/nova-chunks/nova-part*.b64" | Sort-Object Name
+          if ($parts.Count -ne 16) { throw "Expected 16 Nova patch chunks, found $($parts.Count)" }
           $patch64 = ($parts | ForEach-Object { (Get-Content -Raw $_.FullName).Trim() }) -join ""
           [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\Axolot-v0.15.0-Nova.patch", [Convert]::FromBase64String($patch64))
+
           git apply --check --unsafe-paths --directory="work/Axolot-Client-v0.15.0" "$env:RUNNER_TEMP\Axolot-v0.15.0-Nova.patch"
           git apply --unsafe-paths --directory="work/Axolot-Client-v0.15.0" "$env:RUNNER_TEMP\Axolot-v0.15.0-Nova.patch"
+
+          $pkg = Get-Content -Raw "work\Axolot-Client-v0.15.0\package.json" | ConvertFrom-Json
+          if ($pkg.version -ne "0.15.0") { throw "Nova patch version is $($pkg.version), expected 0.15.0" }
 
       - name: Prepare Axolot Core from Fast Client source
         shell: pwsh
@@ -62,7 +67,7 @@ jobs:
         working-directory: work/Axolot-Client-v0.15.0
         run: npm install --no-audit --no-fund
 
-      - name: Verify frontend
+      - name: Verify Nova frontend
         working-directory: work/Axolot-Client-v0.15.0
         run: npm run build
 
@@ -70,7 +75,7 @@ jobs:
         working-directory: work/Axolot-Client-v0.15.0/src-tauri
         run: cargo check
 
-      - name: Build Windows installer
+      - name: Build Windows NSIS installer
         working-directory: work/Axolot-Client-v0.15.0
         run: npm run tauri build -- --bundles nsis
 
@@ -81,35 +86,52 @@ jobs:
           $work = "work\Axolot-Client-v0.15.0"
           $version = (Get-Content -Raw "$work\package.json" | ConvertFrom-Json).version
           if ($version -ne "0.15.0") { throw "Unexpected version $version" }
-          $source = Get-ChildItem "$work\src-tauri\target\release\bundle\nsis\*.exe" | Select-Object -First 1
-          if (-not $source) { throw "NSIS installer not found" }
+
+          $built = Get-ChildItem "$work\src-tauri\target\release\bundle\nsis\*.exe" | Select-Object -First 1
+          if (-not $built) { throw "NSIS installer not found" }
+
           $installer = "Axolot-Client-Setup-$version.exe"
-          Copy-Item $source.FullName $installer
+          Copy-Item $built.FullName $installer
           $sha = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLower()
           $download = "https://rlbgvgosxrhqnppbrtey.supabase.co/storage/v1/object/public/axolot-releases/stable/$installer"
+
           @{
             version = $version
             download_url = $download
             sha256 = $sha
-            notes = "Axolot 0.15.0 Nova: SmartBoost, Pre-Launch Doctor, profile snapshots, Server Deck, resource/shader manager, Ctrl+K Command Palette and denser desktop UI."
+            notes = "Axolot 0.15.0 Nova: dense desktop UI, SmartBoost, Pre-Launch Doctor, profile snapshots, Server Deck, resource/shader manager and Ctrl+K command palette."
             mandatory = $false
           } | ConvertTo-Json | Set-Content -Encoding UTF8 axolot-update.json
+
+          $stage = "$env:RUNNER_TEMP\Axolot-Client-v$version"
+          Copy-Item $work $stage -Recurse
+          @(
+            "$stage\node_modules",
+            "$stage\dist",
+            "$stage\src-tauri\target",
+            "$stage\axolot-core\.git",
+            "$stage\axolot-core\.gradle",
+            "$stage\axolot-core\build"
+          ) | ForEach-Object { if (Test-Path $_) { Remove-Item $_ -Recurse -Force } }
+          Compress-Archive -Path $stage -DestinationPath "Axolot-Client-v$version-Source.zip" -Force
+
           "version=$version" >> $env:GITHUB_OUTPUT
           "tag=axolot-v$version" >> $env:GITHUB_OUTPUT
           "installer=$installer" >> $env:GITHUB_OUTPUT
 
-      - name: Publish GitHub staging release
+      - name: Publish Nova release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.release.outputs.tag }}
           target_commitish: main
-          name: Axolot Client ${{ steps.release.outputs.version }} RC
+          name: Axolot Client ${{ steps.release.outputs.version }} Nova RC
           body: |
-            Axolot Client 0.15.0 Nebula Prime.
-            SmartBoost + Profile Doctor + Snapshots + Server Deck + content shelves + Command Palette.
-            Original-source attribution is preserved; verify redistribution rights before commercial/public distribution.
+            Axolot Client 0.15.0 Nova.
+            Rebuilt desktop experience with SmartBoost, Pre-Launch Doctor, Profile Snapshots, Server Deck, pack/shader management, Activity Center and Axolot Core.
+            Fast Client-derived Core attribution is retained. Verify upstream redistribution rights before public/commercial distribution.
           make_latest: true
           files: |
             ${{ steps.release.outputs.installer }}
             Axolot-Core-0.15.0.jar
             axolot-update.json
+            Axolot-Client-v${{ steps.release.outputs.version }}-Source.zip
