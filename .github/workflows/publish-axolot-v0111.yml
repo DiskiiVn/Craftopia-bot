@@ -1,0 +1,54 @@
+name: Publish Axolot v0.11.1 Auto Update
+
+on:
+  push:
+    branches:
+      - axolot-v0111-cloud-admin-build-20261007
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    steps:
+      - name: Download verified Windows installer artifact
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Force -Path "release-files" | Out-Null
+          gh run download 37580342461 -R "${{ github.repository }}" -n "Axolot-Client-v0.11.1-Cloud-Admin" -D "release-files"
+          $exe = Get-ChildItem "release-files" -Filter "*.exe" | Select-Object -First 1
+          if (-not $exe) { throw "Installer artifact missing" }
+          Rename-Item $exe.FullName "Axolot-Client-Setup-0.11.1-RC.exe"
+
+      - name: Create update manifest
+        shell: pwsh
+        run: |
+          $exe = "release-files/Axolot-Client-Setup-0.11.1-RC.exe"
+          $sha = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+          $manifest = @{
+            version = "0.11.1"
+            download_url = "https://github.com/DiskiiVn/Craftopia-bot/releases/download/axolot-v0.11.1/Axolot-Client-Setup-0.11.1-RC.exe"
+            sha256 = $sha
+            notes = "Axolot Cloud Admin, Microsoft Device Code sign-in, backend CurseForge proxy, splash loading and automatic in-app updates."
+            mandatory = $false
+          } | ConvertTo-Json
+          Set-Content -Path "release-files/axolot-update.json" -Value $manifest -Encoding UTF8
+          Write-Host "Installer SHA256: $sha"
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "axolot-v0.11.1"
+          gh release view $tag -R "${{ github.repository }}" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag "release-files/Axolot-Client-Setup-0.11.1-RC.exe" "release-files/axolot-update.json" -R "${{ github.repository }}" --clobber
+          } else {
+            gh release create $tag "release-files/Axolot-Client-Setup-0.11.1-RC.exe" "release-files/axolot-update.json" -R "${{ github.repository }}" --title "Axolot Client v0.11.1 RC" --notes "Cloud-managed Microsoft/CurseForge configuration and automatic update channel." --target "${{ github.sha }}" --latest
+          }
