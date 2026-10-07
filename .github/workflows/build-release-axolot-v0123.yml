@@ -86,7 +86,10 @@ jobs:
             mandatory = $false
           } | ConvertTo-Json -Depth 5
           Set-Content -Path "axolot-v0123-build/axolot-update.json" -Value $manifest -Encoding UTF8
-          Remove-Item -Recurse -Force "axolot-v0123-build/source/node_modules" -ErrorAction SilentlyContinue\n          Remove-Item -Recurse -Force "axolot-v0123-build/source/dist" -ErrorAction SilentlyContinue\n          Remove-Item -Recurse -Force "axolot-v0123-build/source/src-tauri/target" -ErrorAction SilentlyContinue\n          Compress-Archive -Path "axolot-v0123-build/source/*" -DestinationPath "axolot-v0123-build/Axolot-Client-v0.12.3-Source.zip" -Force
+          Remove-Item -Recurse -Force "axolot-v0123-build/source/node_modules" -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force "axolot-v0123-build/source/dist" -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force "axolot-v0123-build/source/src-tauri/target" -ErrorAction SilentlyContinue
+          Compress-Archive -Path "axolot-v0123-build/source/*" -DestinationPath "axolot-v0123-build/Axolot-Client-v0.12.3-Source.zip" -Force
           Write-Host "Installer SHA256: $exeSha"
 
       - name: Upload workflow artifact
