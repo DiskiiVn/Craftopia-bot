@@ -1,129 +1,5 @@
---- a/.github/workflows/release-axolot-v0130.yml
-+++ b/.github/workflows/release-axolot-v0130.yml
-@@ -0,0 +1,110 @@
-+name: Release Axolot Client 0.13.0
-+
-+on:
-+  workflow_dispatch:
-+  push:
-+    branches: [main]
-+    paths:
-+      - 'axolot-build/v0.13.0/**'
-+
-+permissions:
-+  contents: write
-+
-+jobs:
-+  build-windows:
-+    runs-on: windows-latest
-+    steps:
-+      - uses: actions/checkout@v4
-+
-+      - name: Download launcher base
-+        shell: pwsh
-+        run: |
-+          Invoke-WebRequest "https://github.com/DiskiiVn/Craftopia-bot/releases/download/axolot-v0.12.4/Axolot-Client-v0.12.4-Source.zip" -OutFile "$env:RUNNER_TEMP\base.zip"
-+          Expand-Archive "$env:RUNNER_TEMP\base.zip" -DestinationPath "work" -Force
-+          Rename-Item "work\Axolot-Client-v0.12.4" "Axolot-Client-v0.13.0"
-+          git apply --unsafe-paths --directory="work/Axolot-Client-v0.13.0" "axolot-build/v0.13.0/Axolot-v0.13.0-Launcher.patch"
-+
-+      - name: Prepare Axolot Core from Fast Client source
-+        shell: pwsh
-+        run: |
-+          git clone https://github.com/justdreno/Fast-Client.git "work/Axolot-Client-v0.13.0/axolot-core"
-+          git -C "work/Axolot-Client-v0.13.0/axolot-core" checkout dea60753ab79cdbced608246ccf324e2b0334a4c
-+          python "work/Axolot-Client-v0.13.0/scripts/prepare_axolot_core.py" "work/Axolot-Client-v0.13.0/axolot-core"
-+
-+      - uses: actions/setup-java@v4
-+        with:
-+          distribution: temurin
-+          java-version: '21'
-+
-+      - name: Build Axolot Core
-+        shell: pwsh
-+        working-directory: work/Axolot-Client-v0.13.0/axolot-core
-+        run: |
-+          .\gradlew.bat build
-+          $jar = Get-ChildItem "build\libs\axolot-core-0.13.0*.jar" | Where-Object { $_.Name -notmatch 'sources' } | Select-Object -First 1
-+          if (-not $jar) { throw "Axolot Core release jar not found" }
-+          Copy-Item $jar.FullName "..\src-tauri\resources\axolot-client-core.jar" -Force
-+          Copy-Item $jar.FullName "$env:GITHUB_WORKSPACE\Axolot-Core-0.13.0.jar" -Force
-+
-+      - uses: actions/setup-node@v4
-+        with:
-+          node-version: 22
-+
-+      - uses: dtolnay/rust-toolchain@stable
-+
-+      - name: Install launcher dependencies
-+        working-directory: work/Axolot-Client-v0.13.0
-+        run: npm install --no-audit --no-fund
-+
-+      - name: Verify frontend
-+        working-directory: work/Axolot-Client-v0.13.0
-+        run: npm run build
-+
-+      - name: Verify Rust backend
-+        working-directory: work/Axolot-Client-v0.13.0/src-tauri
-+        run: cargo check
-+
-+      - name: Build Windows installer
-+        working-directory: work/Axolot-Client-v0.13.0
-+        run: npm run tauri build -- --bundles nsis
-+
-+      - name: Prepare release assets
-+        id: release
-+        shell: pwsh
-+        run: |
-+          $work = "work\Axolot-Client-v0.13.0"
-+          $version = (Get-Content -Raw "$work\package.json" | ConvertFrom-Json).version
-+          if ($version -ne "0.13.0") { throw "Unexpected version $version" }
-+          $source = Get-ChildItem "$work\src-tauri\target\release\bundle\nsis\*.exe" | Select-Object -First 1
-+          if (-not $source) { throw "NSIS installer not found" }
-+          $installer = "Axolot-Client-Setup-$version.exe"
-+          Copy-Item $source.FullName $installer
-+          Compress-Archive -Path "$work\*" -DestinationPath "Axolot-Client-v$version-Source.zip" -Force
-+          $sha = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLower()
-+          $download = "https://rlbgvgosxrhqnppbrtey.supabase.co/storage/v1/object/public/axolot-releases/stable/$installer"
-+          @{
-+            version = $version
-+            download_url = $download
-+            sha256 = $sha
-+            notes = "Axolot 0.13.0: unified Fast-inspired desktop layout, Mods dashboard, Axolot Core dashboard, responsive page geometry and bundled Axolot Core 0.13.0 for Fabric 1.21.4."
-+            mandatory = $false
-+          } | ConvertTo-Json | Set-Content -Encoding UTF8 axolot-update.json
-+          "version=$version" >> $env:GITHUB_OUTPUT
-+          "tag=axolot-v$version" >> $env:GITHUB_OUTPUT
-+          "installer=$installer" >> $env:GITHUB_OUTPUT
-+
-+      - name: Publish GitHub staging release
-+        uses: softprops/action-gh-release@v2
-+        with:
-+          tag_name: ${{ steps.release.outputs.tag }}
-+          target_commitish: main
-+          name: Axolot Client ${{ steps.release.outputs.version }} RC
-+          body: |
-+            Axolot Client 0.13.0: unified desktop launcher + Axolot Core.
-+            Axolot Core is built from the Fast Client source with original-source attribution retained.
-+          make_latest: true
-+          files: |
-+            ${{ steps.release.outputs.installer }}
-+            Axolot-Core-0.13.0.jar
-+            axolot-update.json
-+            Axolot-Client-v${{ steps.release.outputs.version }}-Source.zip
---- a/BUILD-RELEASE.md
-+++ b/BUILD-RELEASE.md
-@@ -0,0 +1,10 @@
-+# Build Axolot Client 0.13.0
-+
-+1. Build Axolot Core first:
-+   - Windows: `cd axolot-core && gradlew.bat build`
-+   - Linux/macOS: `cd axolot-core && ./gradlew build`
-+2. Copy the remapped JAR from `axolot-core/build/libs/` to `src-tauri/resources/axolot-client-core.jar`.
-+3. Install launcher dependencies: `npm install`.
-+4. Build installer: `npm run tauri build -- --bundles nsis`.
-+
-+The GitHub release workflow included with this source automates those steps on Windows and produces the update manifest with the installer SHA-256.
+diff --git a/README.md b/README.md
+index 13abb07..7cea701 100755
 --- a/README.md
 +++ b/README.md
 @@ -1,6 +1,6 @@
@@ -135,7 +11,7 @@
  
  Highlights:
  - Reworked Identity Vault / multi-account manager UI
-@@ -19,7 +19,7 @@
+@@ -19,7 +19,7 @@ This release keeps the existing Minecraft launch backend and account/profile dat
  Axolot v0.11 uses Microsoft Device Code OAuth. Register Axolot as your own public/native Microsoft application, enable public client flows, and paste the application's Client ID in **Settings → Microsoft App Client ID**. The launcher never asks for a Microsoft password or client secret. The login chain is Microsoft OAuth → Xbox Live → XSTS → Minecraft Services → ownership/profile verification.
  
  ### Automatic updates
@@ -144,7 +20,7 @@
  
  
  ## v0.12.0 cloud-managed configuration
-@@ -51,7 +51,7 @@
+@@ -51,7 +51,7 @@ Admin portal: `https://axolot-client-updates-pter.vercel.app`
  - The launcher does not reuse another launcher's Client ID and does not attempt to bypass Minecraft Services authorization.
  
  
@@ -153,7 +29,7 @@
  - Unlimited Offline/Crack identities with single-add and bulk-add support.
  - Multiple Microsoft/Premium identities can coexist in the same launcher.
  - Microsoft refresh tokens are stored in the OS credential vault via the Rust keyring backend, never in localStorage.
-@@ -61,10 +61,20 @@
+@@ -61,10 +61,20 @@ Admin portal: `https://axolot-client-updates-pter.vercel.app`
  - Minecraft AppID approval handling from v0.12.1 remains in place.
  
  
@@ -175,8 +51,11 @@
 +- Core 0.13.0 targets Fabric 1.21.4 in this release; other profile versions are kept compatible by not injecting the Core JAR.
 +- AutoBoost continues to install Sodium/Lithium/FerriteCore/ImmediatelyFast/EntityCulling and only adds Axolot Core when the profile is compatible.
 +- Release builds compile Axolot Core first, embed the exact JAR into the launcher, build the NSIS installer, hash it and publish the update manifest.
+diff --git a/RELEASE-0.12.4.md b/RELEASE-0.12.4.md
+deleted file mode 100644
+index 16c1864..0000000
 --- a/RELEASE-0.12.4.md
-+++ b/RELEASE-0.12.4.md
++++ /dev/null
 @@ -1,12 +0,0 @@
 -# Axolot Client 0.12.4 RC
 -
@@ -190,26 +69,8 @@
 -- New right rail with Client Status, Quick Tools, Accounts and Performance cards.
 -- Whole launcher window stays fixed. Only content-heavy sub-pages scroll inside their own panels.
 -- Auto Update remains pointed at the Supabase stable channel and validates SHA-256 before installation.
---- a/RELEASE-0.13.0.md
-+++ b/RELEASE-0.13.0.md
-@@ -0,0 +1,17 @@
-+# Axolot Client 0.13.0 RC
-+
-+## Launcher
-+- Unified desktop layout across Play, Profiles, Mods, Accounts, Client and Settings.
-+- Compact Fast-style navigation rail that expands on hover without moving page content.
-+- Removed oversized website-like page heroes; every page now shares the same toolbar scale.
-+- Fixed page alignment, card proportions, internal scrolling and resize behavior.
-+- Added first-class Mods dashboard and Axolot Core dashboard.
-+- Added profile-aware Axolot Core install/repair controls.
-+- Preserved Microsoft multi-account, Modrinth/CurseForge, AutoBoost, live console, Crash Center and verified self-update.
-+
-+## Axolot Core
-+- Reworked from the user-provided Fast Client source.
-+- Rebranded visible UI to Axolot Core / Nebula 0.13.
-+- Cyan / blue / violet Material3 theme instead of the original orange palette.
-+- New compact home dashboard and polished in-game navigation rail.
-+- Initial target: Fabric + Minecraft 1.21.4. Other launcher profiles continue to work without injecting an incompatible Core JAR.
+diff --git a/package.json b/package.json
+index 693ba6b..8534ab3 100755
 --- a/package.json
 +++ b/package.json
 @@ -1,7 +1,7 @@
@@ -221,115 +82,266 @@
    "type": "module",
    "scripts": {
      "dev": "vite",
---- a/scripts/prepare_axolot_core.py
-+++ b/scripts/prepare_axolot_core.py
-@@ -0,0 +1,103 @@
-+from __future__ import annotations
-+from pathlib import Path
-+import json
-+import re
-+import shutil
-+import sys
+diff --git a/src-tauri/Cargo.toml b/src-tauri/Cargo.toml
+index c041cab..dfde45b 100755
+--- a/src-tauri/Cargo.toml
++++ b/src-tauri/Cargo.toml
+@@ -1,6 +1,6 @@
+ [package]
+ name = "axolot-client"
+-version = "0.12.4"
++version = "0.13.0"
+ description = "Axolot Client Minecraft launcher"
+ authors = ["Axolot Client"]
+ edition = "2021"
+diff --git a/src-tauri/Cargo.toml.bak b/src-tauri/Cargo.toml.bak
+deleted file mode 100755
+index 9ce6773..0000000
+--- a/src-tauri/Cargo.toml.bak
++++ /dev/null
+@@ -1,28 +0,0 @@
+-[package]
+-name = "axolot-client"
+-version = "0.9.2"
+-description = "Axolot Client Minecraft launcher"
+-authors = ["Axolot Client"]
+-edition = "2021"
+-
+-[lib]
+-name = "axolot_client_lib"
+-crate-type = ["staticlib", "cdylib", "rlib"]
+-
+-[build-dependencies]
+-tauri-build = { version = "2", features = [] }
+-
+-[dependencies]
+-tauri = { version = "2", features = [] }
+-serde = { version = "1", features = ["derive"] }
+-serde_json = "1"
+-reqwest = { version = "0.12", features = ["json", "stream"] }
+-sha2 = "0.10"
+-sha1 = "0.10"
+-md5 = "0.7"
+-tokio = { version = "1", features = ["fs", "process", "macros", "rt-multi-thread", "time"] }
+-dirs = "6"
+-zip = { version = "2", default-features = false, features = ["deflate"] }
+-futures-util = "0.3"
+-regex = "1"
+-urlencoding = "2"
+diff --git a/src-tauri/src/lib.rs b/src-tauri/src/lib.rs
+index b342488..8712aa2 100755
+--- a/src-tauri/src/lib.rs
++++ b/src-tauri/src/lib.rs
+@@ -122,6 +122,15 @@ struct OptimizationPackResult {
+     message: String,
+ }
+ 
++#[derive(Debug, Serialize)]
++struct AxolotCoreStatus {
++    supported: bool,
++    installed: bool,
++    version: String,
++    path: String,
++    detail: String,
++}
 +
-+root = Path(sys.argv[1] if len(sys.argv) > 1 else "axolot-core").resolve()
-+if not (root / "build.gradle").exists():
-+    raise SystemExit(f"Fast Client source not found: {root}")
+ #[derive(Debug, Serialize, Clone)]
+ struct LaunchProgress {
+     stage: String,
+@@ -318,7 +327,10 @@ struct MojangVersionRef {
+ }
+ 
+ const AXOLOT_CORE_BYTES: &[u8] = include_bytes!("../resources/axolot-client-core.jar");
+-const USER_AGENT: &str = "AxolotClient/0.12.4 (+https://axolot.local)";
++const AXOLOT_CORE_VERSION: &str = "0.13.0";
++const AXOLOT_CORE_GAME_VERSION: &str = "1.21.4";
++const AXOLOT_CORE_FILE: &str = "axolot-core-0.13.0.jar";
++const USER_AGENT: &str = "AxolotClient/0.13.0 (+https://axolot.local)";
+ const AXOLOT_CURSEFORGE_PROXY: &str = "https://rlbgvgosxrhqnppbrtey.supabase.co/functions/v1/axolot-curseforge";
+ 
+ fn emit_progress(app: &tauri::AppHandle, stage: &str, message: impl Into<String>, percent: u8) {
+@@ -1086,6 +1098,7 @@ async fn launch_profile(
+     let game_dir = profile_root(&profile_id)?;
+     tokio::fs::create_dir_all(game_dir.join("mods")).await.map_err(|e| e.to_string())?;
+     tokio::fs::create_dir_all(game_dir.join("logs")).await.map_err(|e| e.to_string())?;
++    cleanup_old_axolot_core(&game_dir.join("mods"), axolot_core_supported(&game_version, &loader))?;
+ 
+     let classpath_sep = if cfg!(target_os = "windows") { ";" } else { ":" };
+     let classpath_text = classpath.iter().map(|p| p.to_string_lossy().to_string()).collect::<Vec<_>>().join(classpath_sep);
+@@ -1665,6 +1678,63 @@ async fn install_curseforge_project(
+ }
+ 
+ 
++fn cleanup_old_axolot_core(dir: &Path, keep_current: bool) -> Result<(), String> {
++    let entries = match std::fs::read_dir(dir) {
++        Ok(entries) => entries,
++        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
++        Err(error) => return Err(error.to_string()),
++    };
++    for entry in entries.flatten() {
++        let path = entry.path();
++        let Some(name) = path.file_name().and_then(|x| x.to_str()) else { continue };
++        let ours = name.starts_with("axolot-core-") || name.starts_with("axolot-client-core-");
++        if !ours { continue; }
++        if keep_current && name == AXOLOT_CORE_FILE { continue; }
++        let _ = std::fs::remove_file(path);
++    }
++    Ok(())
++}
 +
-+assets = root / "src/main/resources/assets"
-+if (assets / "fast").exists() and not (assets / "axolot").exists():
-+    (assets / "fast").rename(assets / "axolot")
-+for old, new in [("fast.mixins.json", "axolot.mixins.json"), ("fast.accesswidener", "axolot.accesswidener")]:
-+    src = root / "src/main/resources" / old
-+    dst = root / "src/main/resources" / new
-+    if src.exists() and not dst.exists():
-+        src.rename(dst)
++fn axolot_core_supported(game_version: &str, loader: &str) -> bool {
++    loader.eq_ignore_ascii_case("fabric") && game_version == AXOLOT_CORE_GAME_VERSION
++}
 +
-+text_files = list(root.rglob("*.java")) + list(root.rglob("*.gradle")) + list(root.rglob("*.properties")) + list(root.rglob("*.json")) + list(root.rglob("*.md"))
-+for path in text_files:
-+    try:
-+        text = path.read_text(encoding="utf-8")
-+    except Exception:
-+        continue
-+    text = text.replace("/assets/fast/", "/assets/axolot/").replace("assets/fast/", "assets/axolot/")
-+    text = text.replace("Fast Client", "Axolot Client").replace("FastClient", "AxolotCore")
-+    text = text.replace("Performance & Utility Client", "Performance · HUD · Utility · Profiles")
-+    path.write_text(text, encoding="utf-8")
++#[tauri::command]
++async fn get_axolot_core_status(profile_id: String, game_version: String, loader: String) -> Result<AxolotCoreStatus, String> {
++    let supported = axolot_core_supported(&game_version, &loader);
++    let path = mods_dir(&profile_id)?.join(AXOLOT_CORE_FILE);
++    let installed = path.exists();
++    let detail = if !loader.eq_ignore_ascii_case("fabric") {
++        "Axolot Core requires Fabric.".to_string()
++    } else if game_version != AXOLOT_CORE_GAME_VERSION {
++        format!("Axolot Core {AXOLOT_CORE_VERSION} currently targets Minecraft {AXOLOT_CORE_GAME_VERSION}.")
++    } else if installed {
++        "Axolot Core is installed and ready for this profile.".to_string()
++    } else {
++        "Axolot Core is compatible and can be installed for this profile.".to_string()
++    };
++    Ok(AxolotCoreStatus {
++        supported,
++        installed,
++        version: AXOLOT_CORE_VERSION.into(),
++        path: path.to_string_lossy().to_string(),
++        detail,
++    })
++}
 +
-+p = root / "build.gradle"
-+s = p.read_text(encoding="utf-8").replace("src/main/resources/fast.accesswidener", "src/main/resources/axolot.accesswidener")
-+p.write_text(s, encoding="utf-8")
++#[tauri::command]
++async fn install_axolot_core(profile_id: String, game_version: String, loader: String) -> Result<AxolotCoreStatus, String> {
++    if !axolot_core_supported(&game_version, &loader) {
++        return get_axolot_core_status(profile_id, game_version, loader).await;
++    }
++    let dir = mods_dir(&profile_id)?;
++    tokio::fs::create_dir_all(&dir).await.map_err(|e| e.to_string())?;
++    cleanup_old_axolot_core(&dir, false)?;
++    let path = dir.join(AXOLOT_CORE_FILE);
++    tokio::fs::write(&path, AXOLOT_CORE_BYTES).await.map_err(|e| format!("Không ghi được Axolot Core: {e}"))?;
++    get_axolot_core_status(profile_id, game_version, loader).await
++}
 +
-+p = root / "gradle.properties"
-+s = p.read_text(encoding="utf-8")
-+s = re.sub(r"mod_version=.*", "mod_version=0.13.0", s)
-+s = re.sub(r"maven_group=.*", "maven_group=gg.axolot", s)
-+s = re.sub(r"archives_base_name=.*", "archives_base_name=axolot-core", s)
-+p.write_text(s, encoding="utf-8")
-+
-+p = root / "src/main/resources/fabric.mod.json"
-+d = json.loads(p.read_text(encoding="utf-8"))
-+d.update({
-+    "id": "axolotcore",
-+    "name": "Axolot Core",
-+    "description": "Axolot Client in-game core for performance, HUD, profiles, music and utility modules.",
-+    "authors": ["Axolot Client Studio", "EldoDebug (Fast Client source)"],
-+    "contact": {"homepage": "https://github.com/DiskiiVn/Craftopia-bot"},
-+    "environment": "client",
-+    "mixins": ["axolot.mixins.json"],
-+    "accessWidener": "axolot.accesswidener",
-+})
-+p.write_text(json.dumps(d, indent=2) + "\n", encoding="utf-8")
-+
-+p = root / "src/main/java/com/fastclient/Fast.java"
-+s = p.read_text(encoding="utf-8")
-+s = s.replace('private final String name = "Fast";', 'private final String name = "Axolot";')
-+s = re.sub(r'private final String version = "[^"]+";', 'private final String version = "0.13.0";', s)
-+p.write_text(s, encoding="utf-8")
-+
-+
-+p = root / "src/main/java/com/fastclient/logger/FastLogger.java"
-+if p.exists():
-+    t = p.read_text(encoding="utf-8").replace('LogManager.getLogger("Axolot Client")', 'LogManager.getLogger("Axolot Core")')
-+    p.write_text(t, encoding="utf-8")
-+
-+p = root / "src/main/java/com/fastclient/libraries/material3/Material3.java"
-+s = p.read_text(encoding="utf-8")
-+s = re.sub(r'private static final double FASTCLIENT_HUE = [0-9.]+;', 'private static final double FASTCLIENT_HUE = 195.0;', s)
-+s = re.sub(r'private static final double FASTCLIENT_CHROMA = [0-9.]+;', 'private static final double FASTCLIENT_CHROMA = 62.0;', s)
-+s = re.sub(r'private static final double FASTCLIENT_TONE = [0-9.]+;', 'private static final double FASTCLIENT_TONE = 72.0;', s)
-+s = re.sub(r'public static final int FASTCLIENT_ORANGE = 0x[0-9A-Fa-f]+;', 'public static final int FASTCLIENT_ORANGE = 0xFF67E8DD;', s)
-+s = re.sub(r'public static final int FASTCLIENT_YELLOW = 0x[0-9A-Fa-f]+;', 'public static final int FASTCLIENT_YELLOW = 0xFFA882FF;', s)
-+s = re.sub(r'public static final int FASTCLIENT_TEXT_ORANGE = 0x[0-9A-Fa-f]+;', 'public static final int FASTCLIENT_TEXT_ORANGE = 0xFF72D8FF;', s)
-+s = re.sub(r'public static final int FASTCLIENT_HOVER = 0x[0-9A-Fa-f]+;', 'public static final int FASTCLIENT_HOVER = 0xFF10222D;', s)
-+p.write_text(s, encoding="utf-8")
-+
-+p = root / "src/main/java/com/fastclient/gui/modmenu/GuiModMenu.java"
-+s = p.read_text(encoding="utf-8")
-+s = s.replace("new NavigationRail(this, getX(), getY(), 90, getHeight())", "new NavigationRail(this, getX(), getY(), 104, getHeight())")
-+s = s.replace("return Math.max(600, Math.min(1200, targetWidth));", "return Math.max(720, Math.min(1320, targetWidth));")
-+s = s.replace("return Math.max(400, Math.min(700, targetHeight));", "return Math.max(460, Math.min(760, targetHeight));")
-+p.write_text(s, encoding="utf-8")
-+
-+home = '''package com.fastclient.gui.modmenu.pages;\n\nimport com.fastclient.Fast;\nimport com.fastclient.gui.api.Gui;\nimport com.fastclient.gui.api.page.Page;\nimport com.fastclient.gui.api.page.impl.RightLeftTransition;\nimport com.fastclient.management.color.api.ColorPalette;\nimport com.fastclient.skia.Skia;\nimport com.fastclient.skia.font.Fonts;\nimport com.fastclient.skia.font.Icon;\nimport com.fastclient.utils.ColorUtils;\n\npublic class HomePage extends Page {\n    public HomePage(Gui parent) { super(parent, "text.home", Icon.HOME, new RightLeftTransition(true)); }\n    @Override public void draw(double mouseX, double mouseY) {\n        super.draw(mouseX, mouseY);\n        ColorPalette palette = Fast.getInstance().getColorManager().getPalette();\n        float pad = 34, top = y + 30, left = x + pad, right = x + width - pad;\n        Skia.drawText("AXOLOT CORE", left, top + 6, palette.getPrimary(), Fonts.getMedium(11));\n        Skia.drawText("Your Minecraft, tuned.", left, top + 43, palette.getOnSurface(), Fonts.getMedium(34));\n        Skia.drawText("Performance, HUD, profiles and utility modules in one in-game command layer.", left, top + 70, palette.getOnSurfaceVariant(), Fonts.getRegular(14));\n        float heroY = top + 98, heroH = Math.max(165, height - 235);\n        Skia.drawRoundedRect(left, heroY, right - left, heroH, 26, palette.getSurface());\n        Skia.drawOutline(left, heroY, right - left, heroH, 26, 1, ColorUtils.applyAlpha(palette.getPrimary(), .18F));\n        float logoSize = Math.min(116, heroH - 44);\n        Skia.drawImage("home_logo.png", left + 28, heroY + (heroH - logoSize) / 2, logoSize, logoSize);\n        float copyX = left + 28 + logoSize + 28;\n        Skia.drawText("Axolot Client", copyX, heroY + 45, palette.getOnSurface(), Fonts.getMedium(30));\n        Skia.drawText("NEBULA 0.13", copyX, heroY + 71, palette.getPrimary(), Fonts.getMedium(12));\n        Skia.drawText("Left click modules to toggle  •  Right click for settings", copyX, heroY + 103, palette.getOnSurfaceVariant(), Fonts.getRegular(13));\n        int modules = Fast.getInstance().getModManager().getMods().size();\n        int profiles = Fast.getInstance().getProfileManager().getProfiles().size();\n        float statY = heroY + heroH - 62, statW = 142;\n        drawStat(copyX, statY, statW, "MODULES", String.valueOf(modules), palette);\n        drawStat(copyX + statW + 12, statY, statW, "PROFILES", String.valueOf(profiles), palette);\n        drawStat(copyX + (statW + 12) * 2, statY, statW, "RENDER", "SKIA", palette);\n        Skia.drawCenteredText("Tip: use the edit button on the rail to arrange your HUD", x + width / 2, y + height - 28, palette.getOnSurfaceVariant(), Fonts.getRegular(11));\n    }\n    private void drawStat(float sx, float sy, float sw, String label, String value, ColorPalette palette) {\n        Skia.drawRoundedRect(sx, sy, sw, 42, 14, palette.getSurfaceContainerHigh());\n        Skia.drawText(label, sx + 12, sy + 13, palette.getOnSurfaceVariant(), Fonts.getRegular(9));\n        Skia.drawText(value, sx + 12, sy + 31, palette.getOnSurface(), Fonts.getMedium(15));\n    }\n}\n'''
-+(root / "src/main/java/com/fastclient/gui/modmenu/pages/HomePage.java").write_text(home, encoding="utf-8")
-+
-+p = root / "src/main/java/com/fastclient/gui/modmenu/component/NavigationRail.java"
-+s = p.read_text(encoding="utf-8")
-+s = s.replace("Skia.drawRoundedRectVarying(x, y, width, height, 35, 0, 0, 35, palette.getSurface());\n\n\t\tSkia.drawRect(x + width - 1, y, 1, height, Color.WHITE);", "Skia.drawRoundedRectVarying(x, y, width, height, 30, 0, 0, 30, palette.getSurface());\n\n\t\tSkia.drawRect(x + width - 1, y + 18, 1, height - 36, ColorUtils.applyAlpha(palette.getOnSurfaceVariant(), 0.18F));")
-+s = s.replace("float navStartY = 120;", "float navStartY = 126;").replace("float navItemHeight = 68;", "float navItemHeight = 72;")
-+s = s.replace("float offsetY = 120;", "float offsetY = 126;").replace("offsetY += 68;", "offsetY += 72;")
-+old_block = """\t\t\tjava.awt.Color c0 = java.awt.Color.WHITE;\n\t\t\tjava.awt.Color c1 = java.awt.Color.WHITE;\n\n\t\t\tAnimation animation = n.animation;\n\t\t\tfloat selWidth = 56;\n\t\t\tfloat selHeight = 32;\n\t\t\tfloat adjustedY = y + offsetY + scrollHelper.getValue();\n\t\t\tboolean isActive = currentNavigation.equals(n);\n\n\t\t\tSkia.drawText(icon, x + (width / 2) - (iconWidth / 2), y + (offsetY + (selHeight / 2)) - (iconHeight / 2),\n\t\t\t\t\tc0, font);\n\t\t\tSkia.drawCenteredText(I18n.get(title), x + (width / 2), y + offsetY + selHeight + 5, c1,\n\t\t\t\t\tFonts.getMedium(12));\n\n\t\t\tif (isActive) {\n\t\t\t\tfloat barWidth = 32;\n\t\t\t\tfloat barHeight = 3;\n\t\t\t\tfloat barX = x + (width / 2) - (barWidth / 2);\n\t\t\t\tfloat barY = y + offsetY + selHeight + 18;\n\t\t\t\tSkia.drawRoundedRect(barX, barY, barWidth, barHeight, 1.5F, palette.getPrimary());\n\t\t\t}\n"""
-+new_block = """\t\t\tboolean isActive = currentNavigation.equals(n);\n\t\t\tjava.awt.Color c0 = isActive ? palette.getPrimary() : palette.getOnSurfaceVariant();\n\t\t\tjava.awt.Color c1 = isActive ? palette.getOnSurface() : palette.getOnSurfaceVariant();\n\n\t\t\tAnimation animation = n.animation;\n\t\t\tfloat selWidth = 62;\n\t\t\tfloat selHeight = 36;\n\t\t\tfloat adjustedY = y + offsetY + scrollHelper.getValue();\n\n\t\t\tif (isActive) {\n\t\t\t\tfloat pillX = x + (width / 2) - (selWidth / 2);\n\t\t\t\tSkia.drawRoundedRect(pillX, y + offsetY - 2, selWidth, selHeight + 6, 16,\n\t\t\t\t\t\tColorUtils.applyAlpha(palette.getPrimaryContainer(), 0.72F));\n\t\t\t}\n\n\t\t\tSkia.drawText(icon, x + (width / 2) - (iconWidth / 2), y + (offsetY + (selHeight / 2)) - (iconHeight / 2),\n\t\t\t\t\tc0, font);\n\t\t\tSkia.drawCenteredText(I18n.get(title), x + (width / 2), y + offsetY + selHeight + 7, c1,\n\t\t\t\t\tFonts.getMedium(11));\n"""
-+if old_block in s:
-+    s = s.replace(old_block, new_block)
-+p.write_text(s, encoding="utf-8")
-+
-+(root / "README.md").write_text("""# Axolot Core 0.13.0\n\nAxolot Core is the in-game component bundled with Axolot Client. It is derived from the user-provided Fast Client source and reworked for the Axolot visual system.\n\nTarget: Fabric / Minecraft 1.21.4 / Java 21.\n\nThe original uploaded source did not include a LICENSE file. Preserve original attribution and verify redistribution rights before public/commercial distribution.\n""", encoding="utf-8")
-+
-+print(f"Prepared Axolot Core in {root}")
+ #[tauri::command]
+ async fn install_optimization_pack(profile_id: String, game_version: String, loader: String, ram_gb: f64) -> Result<OptimizationPackResult, String> {
+     if loader.to_lowercase() != "fabric" {
+@@ -1677,9 +1747,13 @@ async fn install_optimization_pack(profile_id: String, game_version: String, loa
+ 
+     let dir = mods_dir(&profile_id)?;
+     tokio::fs::create_dir_all(&dir).await.map_err(|e| e.to_string())?;
+-    tokio::fs::write(dir.join("axolot-client-core-0.6.0.jar"), AXOLOT_CORE_BYTES).await.map_err(|e| format!("Không ghi được Axolot Client Core: {e}"))?;
++    cleanup_old_axolot_core(&dir, axolot_core_supported(&game_version, &loader))?;
++    let mut installed = Vec::new();
++    if axolot_core_supported(&game_version, &loader) {
++        tokio::fs::write(dir.join(AXOLOT_CORE_FILE), AXOLOT_CORE_BYTES).await.map_err(|e| format!("Không ghi được Axolot Core: {e}"))?;
++        installed.push(format!("Axolot Core {}", AXOLOT_CORE_VERSION));
++    }
+     let client = reqwest::Client::new();
+-    let mut installed = vec!["Axolot Client Core 0.6.0".to_string()];
+     let mut failed = Vec::new();
+     for project in projects {
+         match install_modrinth_mod_for_profile(&client, &profile_id, project, &game_version, &loader).await {
+@@ -1974,6 +2048,8 @@ pub fn run() {
+             search_curseforge,
+             install_curseforge_project,
+             install_optimization_pack,
++            get_axolot_core_status,
++            install_axolot_core,
+             begin_microsoft_login,
+             complete_microsoft_login,
+             restore_microsoft_session,
+diff --git a/src-tauri/tauri.conf.json b/src-tauri/tauri.conf.json
+index bb75643..54db940 100755
+--- a/src-tauri/tauri.conf.json
++++ b/src-tauri/tauri.conf.json
+@@ -1,7 +1,7 @@
+ {
+   "$schema": "https://schema.tauri.app/config/2",
+   "productName": "Axolot Client",
+-  "version": "0.12.4",
++  "version": "0.13.0",
+   "identifier": "gg.axolot.client",
+   "build": {
+     "beforeDevCommand": "npm run dev",
+@@ -12,9 +12,9 @@
+   "app": {
+     "windows": [
+       {
+-        "title": "Axolot Client \u2014 Release Candidate 0.12.4",
+-        "width": 1360,
+-        "height": 820,
++        "title": "Axolot Client \u2014 Release Candidate 0.13.0",
++        "width": 1460,
++        "height": 900,
+         "minWidth": 1080,
+         "minHeight": 700,
+         "resizable": true,
+diff --git a/src-tauri/tauri.conf.json.bak b/src-tauri/tauri.conf.json.bak
+deleted file mode 100755
+index 33ce9c7..0000000
+--- a/src-tauri/tauri.conf.json.bak
++++ /dev/null
+@@ -1,48 +0,0 @@
+-{
+-  "$schema": "https://schema.tauri.app/config/2",
+-  "productName": "Axolot Client",
+-  "version": "0.10.1",
+-  "identifier": "gg.axolot.client",
+-  "build": {
+-    "beforeDevCommand": "npm run dev",
+-    "devUrl": "http://localhost:1420",
+-    "beforeBuildCommand": "npm run build",
+-    "frontendDist": "../dist"
+-  },
+-  "app": {
+-    "windows": [
+-      {
+-        "title": "Axolot Client \u2014 Release Candidate 0.10.1",
+-        "width": 1360,
+-        "height": 820,
+-        "minWidth": 1080,
+-        "minHeight": 700,
+-        "resizable": true,
+-        "fullscreen": false,
+-        "decorations": true
+-      }
+-    ],
+-    "security": {
+-      "csp": null
+-    }
+-  },
+-  "bundle": {
+-    "active": true,
+-    "targets": [
+-      "nsis"
+-    ],
+-    "icon": [
+-      "icons/icon.ico"
+-    ],
+-    "publisher": "Axolot Client Studio",
+-    "windows": {
+-      "webviewInstallMode": {
+-        "type": "downloadBootstrapper"
+-      },
+-      "nsis": {
+-        "installMode": "currentUser",
+-        "displayLanguageSelector": false
+-      }
+-    }
+-  }
+-}
+diff --git a/src/main.tsx b/src/main.tsx
+index 2da8570..57fac32 100755
 --- a/src/main.tsx
 +++ b/src/main.tsx
-@@ -130,6 +130,7 @@
+@@ -130,6 +130,7 @@ type LauncherUpdateStatus = { current_version: string; latest_version: string; a
  type RemoteConfig = { microsoft_client_id: string; update_manifest_url: string; latest_launcher_version: string; curseforge_enabled: boolean; curseforge_proxy_url: string; updated_at?: string | null };
  type HealthState = 'ok' | 'warn' | 'error' | 'checking';
  type HealthItem = { id: string; label: string; state: HealthState; detail: string };
@@ -337,7 +349,7 @@
  
  const AXOLOT_PUBLIC_CONFIG_URL = 'https://rlbgvgosxrhqnppbrtey.supabase.co/functions/v1/axolot-public-config';
  const DEFAULT_UPDATE_MANIFEST = 'https://rlbgvgosxrhqnppbrtey.supabase.co/storage/v1/object/public/axolot-releases/stable/axolot-update.json';
-@@ -141,9 +142,9 @@
+@@ -141,9 +142,9 @@ const isMinecraftAppRegistrationError = (message: string) => /invalid app regist
  const nav: { id: Page; icon: React.ElementType; label: string }[] = [
    { id: 'play', icon: Play, label: 'Play' },
    { id: 'profiles', icon: Boxes, label: 'Profiles' },
@@ -349,7 +361,7 @@
    { id: 'settings', icon: Settings, label: 'Settings' },
  ];
  
-@@ -292,6 +293,8 @@
+@@ -292,6 +293,8 @@ function App() {
      { id: 'modrinth', label: 'Modrinth', state: 'checking', detail: 'Not checked yet' },
      { id: 'curseforge', label: 'CurseForge', state: 'checking', detail: 'Not checked yet' },
    ]);
@@ -358,10 +370,11 @@
    const consoleEndRef = React.useRef<HTMLDivElement | null>(null);
  
    const activeAccount = accounts.find((account) => account.id === activeAccountId) ?? accounts[0];
-@@ -357,6 +360,15 @@
+@@ -356,6 +359,15 @@ function App() {
+ 
    const activeProfile = profiles.find((profile) => profile.id === activeProfileId) ?? profiles[0];
  
-   React.useEffect(() => {
++  React.useEffect(() => {
 +    if (!activeProfile) return;
 +    let cancelled = false;
 +    invoke<AxolotCoreStatus>('get_axolot_core_status', { profileId: activeProfile.id, gameVersion: activeProfile.versionId, loader: activeProfile.loader })
@@ -370,11 +383,10 @@
 +    return () => { cancelled = true; };
 +  }, [activeProfile?.id, activeProfile?.versionId, activeProfile?.loader]);
 +
-+  React.useEffect(() => {
+   React.useEffect(() => {
      let disposed = false;
      let unlistenStatus: (() => void) | undefined;
-     let unlistenConsole: (() => void) | undefined;
-@@ -546,6 +558,21 @@
+@@ -546,6 +558,21 @@ function App() {
      }
    }, [activeProfile?.id]);
  
@@ -396,7 +408,7 @@
    const saveSettings = () => {
      const cleaned = sanitizeMinecraftName(launcherName) || activeAccount?.username || 'Player';
      if (activeAccount?.kind === 'offline' && cleaned !== activeAccount.username) {
-@@ -1182,7 +1209,7 @@
+@@ -1182,7 +1209,7 @@ function App() {
        <header className="axo-topbar">
          <button className="axo-brand" onClick={() => setPage('play')}>
            <span className="axo-logo"><i /><b>A</b></span>
@@ -405,7 +417,7 @@
          </button>
  
          <nav className="top-nav">
-@@ -1215,8 +1242,8 @@
+@@ -1215,8 +1242,8 @@ function App() {
                <div className="play-v2-copy">
                  <span className="micro-label">MINECRAFT</span>
                  <h1>Axolot Client</h1>
@@ -416,7 +428,7 @@
                </div>
  
                <div className="play-v2-visual" aria-hidden="true">
-@@ -1316,8 +1343,8 @@
+@@ -1316,8 +1343,8 @@ function App() {
  
          {page === 'profiles' && !creatingProfile && !managingModsProfileId && (
            <section className="profiles-new">
@@ -427,7 +439,7 @@
                <div className="heading-actions">
                  <label className="search-pill"><Search size={16}/><input value={profileSearch} onChange={(e)=>setProfileSearch(e.target.value)} placeholder="Search profiles"/></label>
                  <button className="accent-action" onClick={() => { setCreatingProfile(true); setNewProfileName(`My ${selectedVersionId} ${selectedLoader}`); }}><Plus size={16}/> Create profile</button>
-@@ -1387,7 +1414,7 @@
+@@ -1387,7 +1414,7 @@ function App() {
  
                <div className={`boost-lab ${selectedLoader==='Fabric'?'ready':'off'}`}>
                  <span className="boost-lab-icon"><Zap size={20}/></span>
@@ -436,7 +448,7 @@
                  <span className="boost-state">{selectedLoader==='Fabric'?'READY':'FABRIC ONLY'}</span>
                </div>
  
-@@ -1461,11 +1488,11 @@
+@@ -1461,11 +1488,11 @@ function App() {
  
          {page === 'accounts' && (
            <section className="accounts-page">
@@ -451,7 +463,7 @@
                </div>
                <div className="account-active-summary panel-glass">
                  <span className="user-avatar large"><User size={20}/></span>
-@@ -1527,17 +1554,51 @@
+@@ -1527,17 +1554,51 @@ function App() {
            </section>
          )}
  
@@ -508,7 +520,7 @@
              <div className="settings-bento">
                <label className="setting-tile panel-glass"><span>Active offline username</span><input value={launcherName} onChange={(e)=>renameActiveOfflineAccount(e.target.value)} disabled={activeAccount?.kind !== 'offline'}/><small>Rename the currently active offline account. Manage all accounts from the Accounts tab.</small></label>
                <label className="setting-tile panel-glass"><span>Default memory</span><b className="memory-big">{globalRam} GB</b><input type="range" min="2" max="16" value={globalRam} onChange={(e)=>setGlobalRam(Number(e.target.value))}/><small>Recommended 4–8 GB.</small></label><label className="setting-tile panel-glass"><span>Quick connect server</span><input value={serverAddress} onChange={(e)=>setServerAddress(e.target.value)} placeholder="play.yourserver.com:25565"/><small>Leave empty to open the normal multiplayer menu.</small></label>
-@@ -1572,7 +1633,7 @@
+@@ -1572,7 +1633,7 @@ function App() {
            <div className="boot-radar" aria-hidden="true"><span/><b/><i/></div>
            <div className="boot-core">
              <div className="boot-axo"><span>A</span><i/><b/></div>
@@ -517,9 +529,11 @@
              <h2>Waking the lagoon...</h2>
              <p>{bootMessage}</p>
              <div className="boot-line"><span style={{width:`${bootPercent}%`}}/></div>
+diff --git a/src/styles.css b/src/styles.css
+index 06ba9d9..0247638 100755
 --- a/src/styles.css
 +++ b/src/styles.css
-@@ -581,3 +581,534 @@
+@@ -581,3 +581,534 @@ body{margin:0}
    .axo-topbar{height:78px!important}.top-nav{top:101px!important;height:calc(100vh - 118px)!important}.axo-workspace{height:calc(100vh - 98px)!important}
    .top-nav button{height:62px!important}.play-v2-copy{top:52px}.play-v2-copy h1{font-size:40px}.play-v2-copy p{margin-top:12px}.play-v2-visual{top:1%;height:61%}.play-v2-orbit.orbit-a{width:292px;height:292px}.play-v2-orbit.orbit-b{width:236px;height:236px}.play-v2-orbit.orbit-c{width:182px;height:182px}.play-v2-creature{transform:scale(.98)}.play-v2-actions{bottom:126px}.play-v2-launch,.play-v2-tune{height:64px}.play-v2-launch{width:270px}.play-v2-tune{width:64px}.play-v2-profilebar{min-height:86px}.pv2-tool-grid button{height:69px}.pv2-status{padding:15px 18px}.pv2-card-heading h3{margin:9px 0 12px}.pv2-tools,.pv2-performance{padding:14px 16px}.pv2-tool-grid,.pv2-perf-grid{margin-top:9px}
  }
@@ -1054,164 +1068,3 @@
 +@media(max-height:760px){
 +  :root{--axo13-top:70px}.top-nav{top:82px!important;height:calc(100vh - 94px)!important}.top-nav button{height:52px!important;min-height:52px!important}.axo-workspace{height:calc(100vh - var(--axo13-top))!important;padding-top:10px!important}.page-heading-new,.fast-page-head,.accounts-page .page-heading-new{min-height:78px!important;padding:12px 17px!important}.page-heading-new h1,.fast-page-head h1,.settings-new .page-heading-new h1,.accounts-page .page-heading-new h1{font-size:25px!important}.page-subtitle,.account-lead{display:none!important}.instance-card,.instance-create{min-height:168px!important}.play-v2-copy{top:22px!important}.play-v2-copy h1{font-size:30px!important}.play-v2-visual{top:0!important;height:58%!important}.play-v2-actions{bottom:106px!important}.play-v2-profilebar{min-height:76px!important}.pv2-tool-grid button{height:58px!important}.core-feature{min-height:92px}.core-hero{padding:20px}.core-copy h2{font-size:25px}
 +}
---- a/src-tauri/Cargo.toml
-+++ b/src-tauri/Cargo.toml
-@@ -1,6 +1,6 @@
- [package]
- name = "axolot-client"
--version = "0.12.4"
-+version = "0.13.0"
- description = "Axolot Client Minecraft launcher"
- authors = ["Axolot Client"]
- edition = "2021"
---- a/src-tauri/src/lib.rs
-+++ b/src-tauri/src/lib.rs
-@@ -122,6 +122,15 @@
-     message: String,
- }
- 
-+#[derive(Debug, Serialize)]
-+struct AxolotCoreStatus {
-+    supported: bool,
-+    installed: bool,
-+    version: String,
-+    path: String,
-+    detail: String,
-+}
-+
- #[derive(Debug, Serialize, Clone)]
- struct LaunchProgress {
-     stage: String,
-@@ -318,7 +327,10 @@
- }
- 
- const AXOLOT_CORE_BYTES: &[u8] = include_bytes!("../resources/axolot-client-core.jar");
--const USER_AGENT: &str = "AxolotClient/0.12.4 (+https://axolot.local)";
-+const AXOLOT_CORE_VERSION: &str = "0.13.0";
-+const AXOLOT_CORE_GAME_VERSION: &str = "1.21.4";
-+const AXOLOT_CORE_FILE: &str = "axolot-core-0.13.0.jar";
-+const USER_AGENT: &str = "AxolotClient/0.13.0 (+https://axolot.local)";
- const AXOLOT_CURSEFORGE_PROXY: &str = "https://rlbgvgosxrhqnppbrtey.supabase.co/functions/v1/axolot-curseforge";
- 
- fn emit_progress(app: &tauri::AppHandle, stage: &str, message: impl Into<String>, percent: u8) {
-@@ -1086,6 +1098,7 @@
-     let game_dir = profile_root(&profile_id)?;
-     tokio::fs::create_dir_all(game_dir.join("mods")).await.map_err(|e| e.to_string())?;
-     tokio::fs::create_dir_all(game_dir.join("logs")).await.map_err(|e| e.to_string())?;
-+    cleanup_old_axolot_core(&game_dir.join("mods"), axolot_core_supported(&game_version, &loader))?;
- 
-     let classpath_sep = if cfg!(target_os = "windows") { ";" } else { ":" };
-     let classpath_text = classpath.iter().map(|p| p.to_string_lossy().to_string()).collect::<Vec<_>>().join(classpath_sep);
-@@ -1665,6 +1678,63 @@
- }
- 
- 
-+fn cleanup_old_axolot_core(dir: &Path, keep_current: bool) -> Result<(), String> {
-+    let entries = match std::fs::read_dir(dir) {
-+        Ok(entries) => entries,
-+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-+        Err(error) => return Err(error.to_string()),
-+    };
-+    for entry in entries.flatten() {
-+        let path = entry.path();
-+        let Some(name) = path.file_name().and_then(|x| x.to_str()) else { continue };
-+        let ours = name.starts_with("axolot-core-") || name.starts_with("axolot-client-core-");
-+        if !ours { continue; }
-+        if keep_current && name == AXOLOT_CORE_FILE { continue; }
-+        let _ = std::fs::remove_file(path);
-+    }
-+    Ok(())
-+}
-+
-+fn axolot_core_supported(game_version: &str, loader: &str) -> bool {
-+    loader.eq_ignore_ascii_case("fabric") && game_version == AXOLOT_CORE_GAME_VERSION
-+}
-+
-+#[tauri::command]
-+async fn get_axolot_core_status(profile_id: String, game_version: String, loader: String) -> Result<AxolotCoreStatus, String> {
-+    let supported = axolot_core_supported(&game_version, &loader);
-+    let path = mods_dir(&profile_id)?.join(AXOLOT_CORE_FILE);
-+    let installed = path.exists();
-+    let detail = if !loader.eq_ignore_ascii_case("fabric") {
-+        "Axolot Core requires Fabric.".to_string()
-+    } else if game_version != AXOLOT_CORE_GAME_VERSION {
-+        format!("Axolot Core {AXOLOT_CORE_VERSION} currently targets Minecraft {AXOLOT_CORE_GAME_VERSION}.")
-+    } else if installed {
-+        "Axolot Core is installed and ready for this profile.".to_string()
-+    } else {
-+        "Axolot Core is compatible and can be installed for this profile.".to_string()
-+    };
-+    Ok(AxolotCoreStatus {
-+        supported,
-+        installed,
-+        version: AXOLOT_CORE_VERSION.into(),
-+        path: path.to_string_lossy().to_string(),
-+        detail,
-+    })
-+}
-+
-+#[tauri::command]
-+async fn install_axolot_core(profile_id: String, game_version: String, loader: String) -> Result<AxolotCoreStatus, String> {
-+    if !axolot_core_supported(&game_version, &loader) {
-+        return get_axolot_core_status(profile_id, game_version, loader).await;
-+    }
-+    let dir = mods_dir(&profile_id)?;
-+    tokio::fs::create_dir_all(&dir).await.map_err(|e| e.to_string())?;
-+    cleanup_old_axolot_core(&dir, false)?;
-+    let path = dir.join(AXOLOT_CORE_FILE);
-+    tokio::fs::write(&path, AXOLOT_CORE_BYTES).await.map_err(|e| format!("Không ghi được Axolot Core: {e}"))?;
-+    get_axolot_core_status(profile_id, game_version, loader).await
-+}
-+
- #[tauri::command]
- async fn install_optimization_pack(profile_id: String, game_version: String, loader: String, ram_gb: f64) -> Result<OptimizationPackResult, String> {
-     if loader.to_lowercase() != "fabric" {
-@@ -1677,9 +1747,13 @@
- 
-     let dir = mods_dir(&profile_id)?;
-     tokio::fs::create_dir_all(&dir).await.map_err(|e| e.to_string())?;
--    tokio::fs::write(dir.join("axolot-client-core-0.6.0.jar"), AXOLOT_CORE_BYTES).await.map_err(|e| format!("Không ghi được Axolot Client Core: {e}"))?;
-+    cleanup_old_axolot_core(&dir, axolot_core_supported(&game_version, &loader))?;
-+    let mut installed = Vec::new();
-+    if axolot_core_supported(&game_version, &loader) {
-+        tokio::fs::write(dir.join(AXOLOT_CORE_FILE), AXOLOT_CORE_BYTES).await.map_err(|e| format!("Không ghi được Axolot Core: {e}"))?;
-+        installed.push(format!("Axolot Core {}", AXOLOT_CORE_VERSION));
-+    }
-     let client = reqwest::Client::new();
--    let mut installed = vec!["Axolot Client Core 0.6.0".to_string()];
-     let mut failed = Vec::new();
-     for project in projects {
-         match install_modrinth_mod_for_profile(&client, &profile_id, project, &game_version, &loader).await {
-@@ -1974,6 +2048,8 @@
-             search_curseforge,
-             install_curseforge_project,
-             install_optimization_pack,
-+            get_axolot_core_status,
-+            install_axolot_core,
-             begin_microsoft_login,
-             complete_microsoft_login,
-             restore_microsoft_session,
---- a/src-tauri/tauri.conf.json
-+++ b/src-tauri/tauri.conf.json
-@@ -1,7 +1,7 @@
- {
-   "$schema": "https://schema.tauri.app/config/2",
-   "productName": "Axolot Client",
--  "version": "0.12.4",
-+  "version": "0.13.0",
-   "identifier": "gg.axolot.client",
-   "build": {
-     "beforeDevCommand": "npm run dev",
-@@ -12,9 +12,9 @@
-   "app": {
-     "windows": [
-       {
--        "title": "Axolot Client \u2014 Release Candidate 0.12.4",
--        "width": 1360,
--        "height": 820,
-+        "title": "Axolot Client \u2014 Release Candidate 0.13.0",
-+        "width": 1460,
-+        "height": 900,
-         "minWidth": 1080,
-         "minHeight": 700,
-         "resizable": true,
