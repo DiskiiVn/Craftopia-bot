@@ -24,8 +24,13 @@ jobs:
           Expand-Archive "$env:RUNNER_TEMP\base.zip" -DestinationPath "work" -Force
           if (-not (Test-Path "work\Axolot-Client-v0.15.0\package.json")) { throw "0.15.0 source layout not found" }
           Rename-Item "work\Axolot-Client-v0.15.0" "Axolot-Client-v0.15.1"
-          git apply --check --unsafe-paths --directory="work/Axolot-Client-v0.15.1" "axolot-build/v0.15.1/Axolot-v0.15.1-NovaUI.patch"
-          git apply --unsafe-paths --directory="work/Axolot-Client-v0.15.1" "axolot-build/v0.15.1/Axolot-v0.15.1-NovaUI.patch"
+          $parts = Get-ChildItem "axolot-build/v0.15.1/patch-chunks/part*.b64" | Sort-Object Name
+          if ($parts.Count -ne 4) { throw "Expected 4 patch chunks, found $($parts.Count)" }
+          $patch64 = ($parts | ForEach-Object { (Get-Content -Raw $_.FullName).Trim() }) -join ""
+          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\Axolot-v0.15.1-NovaUI.patch", [Convert]::FromBase64String($patch64))
+
+          git apply --check --unsafe-paths --directory="work/Axolot-Client-v0.15.1" "$env:RUNNER_TEMP\Axolot-v0.15.1-NovaUI.patch"
+          git apply --unsafe-paths --directory="work/Axolot-Client-v0.15.1" "$env:RUNNER_TEMP\Axolot-v0.15.1-NovaUI.patch"
           $pkg = Get-Content -Raw "work\Axolot-Client-v0.15.1\package.json" | ConvertFrom-Json
           if ($pkg.version -ne "0.15.1") { throw "Expected 0.15.1, got $($pkg.version)" }
 
