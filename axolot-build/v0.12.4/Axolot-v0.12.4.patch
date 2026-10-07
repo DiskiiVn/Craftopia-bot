@@ -1,15 +1,3 @@
-diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=target' /mnt/data/axolot_orig/axolot-v0123-work/.github/workflows/release-axolot.yml /mnt/data/axolot_src/axolot-v0123-work/.github/workflows/release-axolot.yml
---- /mnt/data/axolot_orig/axolot-v0123-work/.github/workflows/release-axolot.yml	2026-10-07 04:32:22.000000000 +0000
-+++ /mnt/data/axolot_src/axolot-v0123-work/.github/workflows/release-axolot.yml	2026-10-07 10:27:19.198307662 +0000
-@@ -44,7 +44,7 @@
-             version = $version
-             download_url = $download
-             sha256 = $sha
--            notes = "Axolot Client $version automatic release"
-+            notes = "Desktop launcher shell, fixed Play dashboard and hands-free verified updates"
-             mandatory = $false
-           } | ConvertTo-Json | Set-Content -Encoding UTF8 axolot-update.json
-           "version=$version" >> $env:GITHUB_OUTPUT
 diff -ruN '--exclude=node_modules' '--exclude=dist' '--exclude=target' /mnt/data/axolot_orig/axolot-v0123-work/README.md /mnt/data/axolot_src/axolot-v0123-work/README.md
 --- /mnt/data/axolot_orig/axolot-v0123-work/README.md	2026-10-07 09:34:08.000000000 +0000
 +++ /mnt/data/axolot_src/axolot-v0123-work/README.md	2026-10-07 10:29:10.554218554 +0000
