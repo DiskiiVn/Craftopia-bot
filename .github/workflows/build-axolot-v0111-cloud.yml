@@ -1,0 +1,85 @@
+name: Build Axolot Client v0.11.1 Cloud Admin
+
+on:
+  push:
+    branches:
+      - axolot-v0111-cloud-admin-build-20261007
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reconstruct Axolot v0.11 source
+        shell: pwsh
+        run: |
+          $parts = 0..7 | ForEach-Object { Get-Content -Raw ("axolot-v011-base/payload.part{0:D2}" -f $_) }
+          $b64 = $parts -join ""
+          [IO.File]::WriteAllBytes("axolot-v011-base/payload.zip", [Convert]::FromBase64String($b64))
+          New-Item -ItemType Directory -Force -Path "axolot-v011-base/source-root" | Out-Null
+          Expand-Archive -Path "axolot-v011-base/payload.zip" -DestinationPath "axolot-v011-base/source-root" -Force
+          $entries = Get-ChildItem "axolot-v011-base/source-root"
+          $dirs = @($entries | Where-Object { $_.PSIsContainer })
+          if ($dirs.Count -eq 1 -and (Test-Path (Join-Path $dirs[0].FullName "package.json"))) {
+            Move-Item $dirs[0].FullName "axolot-v011-base/source"
+          } else {
+            New-Item -ItemType Directory -Force -Path "axolot-v011-base/source" | Out-Null
+            Get-ChildItem "axolot-v011-base/source-root" | Move-Item -Destination "axolot-v011-base/source"
+          }
+
+      - name: Apply cloud-admin patch
+        shell: pwsh
+        run: |
+          $patch = @(
+            Get-Content -Raw "axolot-v011-base/apply_cloud.part00"
+            Get-Content -Raw "axolot-v011-base/apply_cloud.part01"
+            Get-Content -Raw "axolot-v011-base/apply_cloud.part02"
+          ) -join ""
+          Set-Content -Path "axolot-v011-base/apply_cloud_admin.py" -Value $patch -Encoding UTF8
+          python "axolot-v011-base/apply_cloud_admin.py"
+
+      - name: Verify cloud-managed release source
+        shell: pwsh
+        run: |
+          $pkg = Get-Content -Raw "axolot-v011-base/source/package.json"
+          $cfg = Get-Content -Raw "axolot-v011-base/source/src-tauri/tauri.conf.json"
+          $main = Get-Content -Raw "axolot-v011-base/source/src/main.tsx"
+          $rust = Get-Content -Raw "axolot-v011-base/source/src-tauri/src/lib.rs"
+          if ($pkg -notmatch '"version"\s*:\s*"0.11.1"') { throw "Wrong package version" }
+          if ($cfg -notmatch 'Release Candidate 0.11.1') { throw "Wrong app title" }
+          if ($main -notmatch 'AXOLOT_PUBLIC_CONFIG_URL') { throw "Remote config missing" }
+          if ($main -match 'CurseForge developer API key') { throw "End-user CurseForge key input still present" }
+          if ($main -match 'Microsoft App Client ID</span><input') { throw "End-user Microsoft Client ID input still present" }
+          if ($rust -notmatch 'AXOLOT_CURSEFORGE_PROXY') { throw "CurseForge backend proxy missing" }
+          if ($rust -notmatch 'async fn install_optimization_pack') { throw "AutoBoost command missing" }
+          if ($rust -notmatch 'fn version_is_newer') { throw "Updater version check missing" }
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        working-directory: axolot-v011-base/source
+        run: npm install
+
+      - name: Build NSIS installer
+        working-directory: axolot-v011-base/source
+        run: npm run tauri build -- --bundles nsis
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Axolot-Client-v0.11.1-Cloud-Admin
+          path: axolot-v011-base/source/src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+          retention-days: 7
