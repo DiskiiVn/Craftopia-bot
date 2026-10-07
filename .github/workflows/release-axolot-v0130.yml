@@ -34,7 +34,7 @@ jobs:
         run: |
           git clone https://github.com/justdreno/Fast-Client.git "work/Axolot-Client-v0.13.0/axolot-core"
           git -C "work/Axolot-Client-v0.13.0/axolot-core" checkout dea60753ab79cdbced608246ccf324e2b0334a4c
-          python "work/Axolot-Client-v0.13.0/scripts/prepare_axolot_core.py" "work/Axolot-Client-v0.13.0/axolot-core"
+          python "axolot-build/v0.13.0/prepare_axolot_core.py" "work/Axolot-Client-v0.13.0/axolot-core"
 
       - uses: actions/setup-java@v4
         with:
