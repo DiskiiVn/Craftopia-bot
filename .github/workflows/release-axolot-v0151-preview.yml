@@ -1,0 +1,113 @@
+name: Axolot Client 0.15.1 UI Preview
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'axolot-build/v0.15.1/BUILD-PREVIEW.txt'
+      - '.github/workflows/release-axolot-v0151-preview.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rebuild 0.15.1 source
+        shell: pwsh
+        run: |
+          Invoke-WebRequest "https://github.com/DiskiiVn/Craftopia-bot/releases/download/axolot-v0.15.0/Axolot-Client-v0.15.0-Source.zip" -OutFile "$env:RUNNER_TEMP\base.zip"
+          Expand-Archive "$env:RUNNER_TEMP\base.zip" -DestinationPath "work" -Force
+          if (-not (Test-Path "work\Axolot-Client-v0.15.0\package.json")) { throw "0.15.0 source layout not found" }
+          Rename-Item "work\Axolot-Client-v0.15.0" "Axolot-Client-v0.15.1"
+          git apply --check --unsafe-paths --directory="work/Axolot-Client-v0.15.1" "axolot-build/v0.15.1/Axolot-v0.15.1-NovaUI.patch"
+          git apply --unsafe-paths --directory="work/Axolot-Client-v0.15.1" "axolot-build/v0.15.1/Axolot-v0.15.1-NovaUI.patch"
+          $pkg = Get-Content -Raw "work\Axolot-Client-v0.15.1\package.json" | ConvertFrom-Json
+          if ($pkg.version -ne "0.15.1") { throw "Expected 0.15.1, got $($pkg.version)" }
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Rebuild bundled Axolot Core
+        shell: pwsh
+        working-directory: work/Axolot-Client-v0.15.1/axolot-core
+        run: |
+          .\gradlew.bat build
+          $jar = Get-ChildItem "build\libs\axolot-core-0.15.0*.jar" | Where-Object { $_.Name -notmatch 'sources' } | Select-Object -First 1
+          if (-not $jar) { throw "Axolot Core 0.15.0 jar not found" }
+          Copy-Item $jar.FullName "..\src-tauri\resources\axolot-client-core.jar" -Force
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install launcher dependencies
+        working-directory: work/Axolot-Client-v0.15.1
+        run: npm install --no-audit --no-fund
+
+      - name: Verify frontend
+        working-directory: work/Axolot-Client-v0.15.1
+        run: npm run build
+
+      - name: Verify Rust backend
+        working-directory: work/Axolot-Client-v0.15.1/src-tauri
+        run: cargo check
+
+      - name: Build Windows preview
+        working-directory: work/Axolot-Client-v0.15.1
+        run: npm run tauri build -- --bundles nsis
+
+      - name: Prepare preview assets
+        id: release
+        shell: pwsh
+        run: |
+          $work = "work\Axolot-Client-v0.15.1"
+          $built = Get-ChildItem "$work\src-tauri\target\release\bundle\nsis\*.exe" | Select-Object -First 1
+          if (-not $built) { throw "NSIS installer not found" }
+          $installer = "Axolot-Client-Setup-0.15.1.exe"
+          Copy-Item $built.FullName $installer
+          $sha = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLower()
+
+          $stage = "$env:RUNNER_TEMP\Axolot-Client-v0.15.1"
+          Copy-Item $work $stage -Recurse
+          @(
+            "$stage\node_modules",
+            "$stage\dist",
+            "$stage\src-tauri\target",
+            "$stage\axolot-core\.gradle",
+            "$stage\axolot-core\build"
+          ) | ForEach-Object { if (Test-Path $_) { Remove-Item $_ -Recurse -Force } }
+          Compress-Archive -Path $stage -DestinationPath "Axolot-Client-v0.15.1-Source.zip" -Force
+
+          @{
+            version = "0.15.1"
+            sha256 = $sha
+            channel = "preview"
+            notes = "Nova UI Rebuild Preview: true maximize/resize, responsive dashboard, overlay sidebar, standardized page geometry and readable typography."
+          } | ConvertTo-Json | Set-Content -Encoding UTF8 axolot-preview.json
+
+          "installer=$installer" >> $env:GITHUB_OUTPUT
+
+      - name: Publish preview release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: axolot-v0.15.1-preview
+          target_commitish: main
+          name: Axolot Client 0.15.1 Nova UI Preview
+          prerelease: true
+          make_latest: false
+          body: |
+            Test build only — stable auto-update remains on 0.15.0.
+            Rebuilt responsive desktop UI, true maximize/resize behavior and a new Home dashboard.
+          files: |
+            ${{ steps.release.outputs.installer }}
+            Axolot-Client-v0.15.1-Source.zip
+            axolot-preview.json
