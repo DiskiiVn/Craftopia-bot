@@ -27,10 +27,8 @@ jobs:
           $patch64 = (Get-Content -Raw "axolot-build/v0.16.1/LauncherRebuild.patch.gz.b64").Trim()
           [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\launcher-patch.gz", [Convert]::FromBase64String($patch64))
           python -c "import gzip,sys;open(sys.argv[2],'wb').write(gzip.decompress(open(sys.argv[1],'rb').read()))" "$env:RUNNER_TEMP\launcher-patch.gz" "$env:RUNNER_TEMP\launcher.patch"
-          Push-Location "work\Axolot-Client-v0.16.1"
-          git apply --check "$env:RUNNER_TEMP\launcher.patch"
-          git apply "$env:RUNNER_TEMP\launcher.patch"
-          Pop-Location
+          git apply --check --directory="work/Axolot-Client-v0.16.1" "$env:RUNNER_TEMP\launcher.patch"
+          git apply --directory="work/Axolot-Client-v0.16.1" "$env:RUNNER_TEMP\launcher.patch"
           $pkg = Get-Content -Raw "work\Axolot-Client-v0.16.1\package.json" | ConvertFrom-Json
           if ($pkg.version -ne "0.16.1") { throw "Package version mismatch" }
           if (-not (Test-Path "work\Axolot-Client-v0.16.1\src\native161.css")) { throw "Native CSS missing" }
