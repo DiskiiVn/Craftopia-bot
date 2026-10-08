@@ -1,0 +1,107 @@
+name: Axolot Client 0.16.0 Fable Preview
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/axolot-v0160-fable-preview.yml'
+      - 'axolot-build/v0.16.0/BUILD-PREVIEW.txt'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct Fable source and art
+        shell: pwsh
+        run: |
+          Invoke-WebRequest "https://github.com/DiskiiVn/Craftopia-bot/releases/download/axolot-v0.15.1-preview/Axolot-Client-v0.15.1-Source.zip" -OutFile "$env:RUNNER_TEMP\base.zip"
+          Expand-Archive "$env:RUNNER_TEMP\base.zip" -DestinationPath "work" -Force
+          if (-not (Test-Path "work\Axolot-Client-v0.15.1\package.json")) { throw "Expected v0.15.1 source archive" }
+          Rename-Item "work\Axolot-Client-v0.15.1" "Axolot-Client-v0.16.0"
+
+          $parts = Get-ChildItem "axolot-build/v0.16.0/fable-chunks/part*.b64" | Sort-Object Name
+          if ($parts.Count -ne 18) { throw "Expected 18 Fable chunks, got $($parts.Count)" }
+          $b64 = ($parts | ForEach-Object { (Get-Content -Raw $_.FullName).Trim() }) -join ""
+          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\fable.patch.gz", [Convert]::FromBase64String($b64))
+          python -c "import gzip,sys;open(sys.argv[2],'wb').write(gzip.decompress(open(sys.argv[1],'rb').read()))" "$env:RUNNER_TEMP\fable.patch.gz" "$env:RUNNER_TEMP\fable.patch"
+          git apply --check --unsafe-paths --directory="work/Axolot-Client-v0.16.0" "$env:RUNNER_TEMP\fable.patch"
+          git apply --unsafe-paths --directory="work/Axolot-Client-v0.16.0" "$env:RUNNER_TEMP\fable.patch"
+          $pkg = Get-Content -Raw "work\Axolot-Client-v0.16.0\package.json" | ConvertFrom-Json
+          if ($pkg.version -ne "0.16.0") { throw "Unexpected package version $($pkg.version)" }
+          if (-not (Test-Path "work\Axolot-Client-v0.16.0\src\assets\minecraft-cherry-valley.webp")) { throw "Background art missing" }
+
+      - name: Verify bundled Core
+        shell: pwsh
+        run: |
+          $core = "work\Axolot-Client-v0.16.0\src-tauri\resources\axolot-client-core.jar"
+          if (-not (Test-Path $core)) { throw "Bundled Axolot Core is missing" }
+          if ((Get-Item $core).Length -lt 100000) { throw "Bundled Core JAR is unexpectedly small" }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        working-directory: work/Axolot-Client-v0.16.0
+        run: npm install --no-audit --no-fund
+
+      - name: Verify TypeScript + Vite
+        working-directory: work/Axolot-Client-v0.16.0
+        run: npm run build
+
+      - name: Verify Rust backend
+        working-directory: work/Axolot-Client-v0.16.0/src-tauri
+        run: cargo check
+
+      - name: Build Windows NSIS preview installer
+        working-directory: work/Axolot-Client-v0.16.0
+        run: npm run tauri build -- --bundles nsis
+
+      - name: Prepare preview release assets
+        id: release
+        shell: pwsh
+        run: |
+          $work = "work\Axolot-Client-v0.16.0"
+          $exe = Get-ChildItem "$work\src-tauri\target\release\bundle\nsis\*.exe" | Select-Object -First 1
+          if (-not $exe) { throw "Installer not found" }
+          $installer = "Axolot-Client-Setup-0.16.0.exe"
+          Copy-Item $exe.FullName $installer -Force
+          $sha = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLower()
+          $stage = "$env:RUNNER_TEMP\Axolot-Client-v0.16.0"
+          Copy-Item $work $stage -Recurse -Force
+          @("$stage\node_modules","$stage\dist","$stage\src-tauri\target","$stage\axolot-core\.gradle","$stage\axolot-core\build") | ForEach-Object {
+            if (Test-Path $_) { Remove-Item $_ -Recurse -Force }
+          }
+          Compress-Archive -Path $stage -DestinationPath "Axolot-Client-v0.16.0-Source.zip" -Force
+          @{
+            version = '0.16.0'
+            sha256 = $sha
+            channel = 'preview'
+            notes = 'Fable UI: Minecraft valley landscape, scenic profile dashboard, real native maximize, fluid layouts and preserved launch controls.'
+          } | ConvertTo-Json | Set-Content -Encoding UTF8 axolot-preview.json
+          "installer=$installer" >> $env:GITHUB_OUTPUT
+
+      - name: Publish preview only
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: axolot-v0.16.0-preview
+          target_commitish: main
+          name: Axolot Client 0.16.0 Fable UI Preview
+          prerelease: true
+          make_latest: false
+          body: |
+            Preview only. Stable Supabase auto-update is not changed.
+            Minecraft-inspired scenic UI with corrected navigation and native maximize/resize.
+            Please verify profile actions, renderer performance and different window sizes before release.
+          files: |
+            ${{ steps.release.outputs.installer }}
+            Axolot-Client-v0.16.0-Source.zip
+            axolot-preview.json
