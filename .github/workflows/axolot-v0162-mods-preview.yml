@@ -24,7 +24,10 @@ jobs:
           Expand-Archive "$env:RUNNER_TEMP\base.zip" -DestinationPath "work" -Force
           if (-not (Test-Path "work\Axolot-Client-v0.16.1\package.json")) { throw "Missing Axolot 0.16.1 source" }
           Rename-Item "work\Axolot-Client-v0.16.1" "Axolot-Client-v0.16.2"
-          $patch = "axolot-build/v0.16.2/Axolot-0.16.2-ModsWorkshop.patch"
+          $patch64 = (Get-Content -Raw "axolot-build/v0.16.2/ModsWorkshop.patch.gz.b64").Trim()
+          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\mods.patch.gz", [Convert]::FromBase64String($patch64))
+          python -c "import gzip,sys;open(sys.argv[2],'wb').write(gzip.decompress(open(sys.argv[1],'rb').read()))" "$env:RUNNER_TEMP\mods.patch.gz" "$env:RUNNER_TEMP\mods.patch"
+          $patch = "$env:RUNNER_TEMP\mods.patch"
           git apply --check --directory="work/Axolot-Client-v0.16.2" $patch
           if ($LASTEXITCODE -ne 0) { throw "Patch check failed" }
           git apply --directory="work/Axolot-Client-v0.16.2" $patch
