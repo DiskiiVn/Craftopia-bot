@@ -1,0 +1,105 @@
+name: Axolot Client 0.16.4 Partner Craftopia Preview
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/axolot-v0164-craftopia-preview.yml'
+      - 'axolot-build/v0.16.4/BUILD-PREVIEW.txt'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assemble Axolot 0.16.4 source
+        shell: pwsh
+        run: |
+          Invoke-WebRequest "https://github.com/DiskiiVn/Craftopia-bot/releases/download/axolot-v0.16.3-preview/Axolot-Client-v0.16.3-Source.zip" -OutFile "$env:RUNNER_TEMP\base.zip"
+          Expand-Archive "$env:RUNNER_TEMP\base.zip" -DestinationPath "work" -Force
+          if (-not (Test-Path "work\Axolot-Client-v0.16.3\package.json")) { throw "Missing Axolot 0.16.3 source" }
+          Rename-Item "work\Axolot-Client-v0.16.3" "Axolot-Client-v0.16.4"
+          $b64 = (Get-Content -Raw "axolot-build/v0.16.4/PartnerCraftopia.patch.gz.b64").Trim()
+          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\craftopia.patch.gz", [Convert]::FromBase64String($b64))
+          python -c "import gzip,sys;open(sys.argv[2],'wb').write(gzip.decompress(open(sys.argv[1],'rb').read()))" "$env:RUNNER_TEMP\craftopia.patch.gz" "$env:RUNNER_TEMP\craftopia.patch"
+          $patch = "$env:RUNNER_TEMP\craftopia.patch"
+          git apply --check --directory="work/Axolot-Client-v0.16.4" $patch
+          if ($LASTEXITCODE -ne 0) { throw "Patch verification failed" }
+          git apply --directory="work/Axolot-Client-v0.16.4" $patch
+          if ($LASTEXITCODE -ne 0) { throw "Patch failed" }
+          $pkg = Get-Content -Raw "work\Axolot-Client-v0.16.4\package.json" | ConvertFrom-Json
+          if ($pkg.version -ne "0.16.4") { throw "Incorrect version" }
+          if (-not (Test-Path "work\Axolot-Client-v0.16.4\src\partners164.css")) { throw "Partner UI stylesheet missing" }
+
+      - name: Verify bundled Axolot Core
+        shell: pwsh
+        run: |
+          $jar="work\Axolot-Client-v0.16.4\src-tauri\resources\axolot-client-core.jar"
+          if (-not (Test-Path $jar)) { throw "Bundled Core missing" }
+          if ((Get-Item $jar).Length -lt 100000) { throw "Bundled Core corrupted" }
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        working-directory: work/Axolot-Client-v0.16.4
+        run: npm install --no-audit --no-fund
+
+      - name: Check TypeScript and build frontend
+        working-directory: work/Axolot-Client-v0.16.4
+        run: npm run build
+
+      - name: Check Rust backend
+        working-directory: work/Axolot-Client-v0.16.4/src-tauri
+        run: cargo check
+
+      - name: Build Windows NSIS installer
+        working-directory: work/Axolot-Client-v0.16.4
+        run: npm run tauri build -- --bundles nsis
+
+      - name: Prepare preview release
+        id: release
+        shell: pwsh
+        run: |
+          $work="work\Axolot-Client-v0.16.4"
+          $exe=Get-ChildItem "$work\src-tauri\target\release\bundle\nsis\*.exe" | Select-Object -First 1
+          if (-not $exe) { throw "Installer missing" }
+          $installer="Axolot-Client-Setup-0.16.4.exe"
+          Copy-Item $exe.FullName $installer -Force
+          $sha=(Get-FileHash $installer -Algorithm SHA256).Hash.ToLower()
+          $stage="$env:RUNNER_TEMP\Axolot-Client-v0.16.4"
+          Copy-Item $work $stage -Recurse -Force
+          @("$stage\node_modules","$stage\dist","$stage\src-tauri\target","$stage\axolot-core\.gradle","$stage\axolot-core\build") | ForEach-Object { if (Test-Path $_) { Remove-Item $_ -Force -Recurse } }
+          Compress-Archive -Path $stage -DestinationPath "Axolot-Client-v0.16.4-Source.zip" -Force
+          @{
+            version="0.16.4"
+            channel="preview"
+            sha256=$sha
+            notes="Real asset progress, responsive Partner hub with Craftopia Server Chill, launch preflight and fixed Quick Join address."
+          } | ConvertTo-Json | Set-Content -Encoding UTF8 axolot-preview.json
+          "installer=$installer" >> $env:GITHUB_OUTPUT
+
+      - name: Publish preview
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: axolot-v0.16.4-preview
+          target_commitish: main
+          name: Axolot Client 0.16.4 Launcher Preview
+          prerelease: true
+          make_latest: false
+          body: |
+            Preview only. Stable Supabase auto-update is unchanged.
+            Added Craftopia Partner IP, game-server favicon, copy IP, Quick Join and layout fixes; loading progress tracks completed asset/library work.
+            This is a QA build, not a general public release.
+          files: |
+            ${{ steps.release.outputs.installer }}
+            Axolot-Client-v0.16.4-Source.zip
+            axolot-preview.json
