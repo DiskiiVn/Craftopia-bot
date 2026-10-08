@@ -1,0 +1,63 @@
+name: Publish Axolot 0.16.6 Preview Installer
+
+on:
+  push:
+    branches:
+      - axolot-v0166-performance-build-20261008
+    paths:
+      - '.github/workflows/publish-axolot-0166-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download successful Windows build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: Axolot-Client-0.16.6-Windows-Preview
+          run-id: 37777741607
+          github-token: ${{ github.token }}
+          path: dist
+
+      - name: Verify binary checksum and Windows PE signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          test -s Axolot-Client-Setup-0.16.6-Preview.exe
+          test -s SHA256.txt
+          sha256sum -c SHA256.txt
+          file Axolot-Client-Setup-0.16.6-Preview.exe
+          test "$(dd if=Axolot-Client-Setup-0.16.6-Preview.exe bs=2 count=1 status=none)" = MZ
+
+      - name: Create public GitHub prerelease with installer
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: axolot-v0.16.6-preview
+          target_commitish: axolot-v0166-performance-build-20261008
+          name: Axolot Client v0.16.6 — Performance Center Preview
+          prerelease: true
+          make_latest: false
+          body: |
+            Axolot Client v0.16.6 Performance Center (unsigned Windows Preview).
+
+            Download Axolot-Client-Setup-0.16.6-Preview.exe for Windows.
+            New performance settings: Eco, Balanced and Max FPS, VSync/FPS
+            tuning, profile doctor, safe backup/rollback.
+
+            Built on Windows GitHub Actions:
+            https://github.com/DiskiiVn/Craftopia-bot/actions/runs/37777741607
+
+            This is a test preview, not a stable auto-update.
+            The installer is unsigned and might prompt Windows SmartScreen.
+            Game FPS improvement is not guaranteed and requires comparison tests.
+          files: |
+            dist/Axolot-Client-Setup-0.16.6-Preview.exe
+            dist/SHA256.txt
