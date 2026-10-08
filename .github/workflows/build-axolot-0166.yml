@@ -1,0 +1,112 @@
+name: Build Axolot 0.16.6 Performance Center (Windows Preview)
+
+on:
+  push:
+    branches:
+      - axolot-v0166-performance-build-20261008
+    paths:
+      - 'axolot-build/v0.16.6/**'
+      - '.github/workflows/build-axolot-0166.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-preview:
+    runs-on: windows-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: work/Axolot-Client-v0.16.5/src-tauri
+
+      - name: Download verified v0.16.5 source archive
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = 'https://rlbgvgosxrhqnppbrtey.supabase.co/storage/v1/object/public/axolot-releases/preview/Axolot-Client-v0.16.5-Source.zip'
+          Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\axolot-0165.zip"
+          $source = Get-Item "$env:RUNNER_TEMP\axolot-0165.zip"
+          if ($source.Length -lt 500000) { throw "Downloaded source unexpectedly small: $($source.Length)" }
+          New-Item -ItemType Directory -Force work | Out-Null
+          Expand-Archive "$env:RUNNER_TEMP\axolot-0165.zip" -DestinationPath work
+          $roots = @(Get-ChildItem work -Recurse -File -Filter package.json | Where-Object {
+            Test-Path (Join-Path $_.Directory.FullName 'src\main.tsx')
+          })
+          if ($roots.Count -ne 1) { throw "Expected one launcher root: found $($roots.Count)" }
+          "PROJECT_DIR=$($roots[0].Directory.FullName)" >> $env:GITHUB_ENV
+
+      - name: Extract and apply native Performance Center v0.16.6
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $encoded = (Get-Content -Raw 'axolot-build/v0.16.6/performance-center-payload.tar.gz.b64').Trim()
+          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\payload.tar.gz", [Convert]::FromBase64String($encoded))
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\integration" | Out-Null
+          tar -xzf "$env:RUNNER_TEMP\payload.tar.gz" -C "$env:RUNNER_TEMP\integration"
+          python "$env:RUNNER_TEMP\integration\Apply_to_Axolot_v0165.py" "$env:PROJECT_DIR"
+          if ($LASTEXITCODE -ne 0) { throw "Performance Center upgrade failed" }
+
+      - name: Install dependencies and verify frontend
+        shell: pwsh
+        run: |
+          Push-Location "$env:PROJECT_DIR"
+          try {
+            if (Test-Path 'package-lock.json') { npm ci --no-audit --no-fund }
+            else { npm install --no-audit --no-fund }
+            if ($LASTEXITCODE -ne 0) { throw 'npm dependencies failed' }
+            npm run build
+            if ($LASTEXITCODE -ne 0) { throw 'Frontend TypeScript/Vite build failed' }
+          }
+          finally { Pop-Location }
+
+      - name: Compile and test Rust backend
+        shell: pwsh
+        run: |
+          Push-Location "$env:PROJECT_DIR\src-tauri"
+          try {
+            cargo check
+            if ($LASTEXITCODE -ne 0) { throw 'Rust check failed' }
+            cargo test
+            if ($LASTEXITCODE -ne 0) { throw 'Rust tests failed' }
+          }
+          finally { Pop-Location }
+
+      - name: Build unsigned Windows NSIS installer
+        shell: pwsh
+        run: |
+          Push-Location "$env:PROJECT_DIR"
+          try {
+            npm run tauri build -- --bundles nsis
+            if ($LASTEXITCODE -ne 0) { throw 'Tauri NSIS build failed' }
+          }
+          finally { Pop-Location }
+
+      - name: Collect installer and source checksums
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          $files = @(Get-ChildItem "$env:PROJECT_DIR\src-tauri\target\release\bundle\nsis\*.exe")
+          if ($files.Count -lt 1) { throw 'Installer not found after build' }
+          $f = $files[0]
+          Copy-Item $f.FullName "artifacts\Axolot-Client-Setup-0.16.6-Preview.exe"
+          Get-FileHash "artifacts\Axolot-Client-Setup-0.16.6-Preview.exe" -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  Axolot-Client-Setup-0.16.6-Preview.exe" } |
+            Out-File -Encoding ascii 'artifacts\SHA256.txt'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Axolot-Client-0.16.6-Windows-Preview
+          path: artifacts/*
+          if-no-files-found: error
+          retention-days: 14
