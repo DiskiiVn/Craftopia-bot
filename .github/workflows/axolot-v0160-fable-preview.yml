@@ -32,6 +32,8 @@ jobs:
           python -c "import gzip,sys;open(sys.argv[2],'wb').write(gzip.decompress(open(sys.argv[1],'rb').read()))" "$env:RUNNER_TEMP\fable.patch.gz" "$env:RUNNER_TEMP\fable.patch"
           git apply --check --unsafe-paths --directory="work/Axolot-Client-v0.16.0" "$env:RUNNER_TEMP\fable.patch"
           git apply --unsafe-paths --directory="work/Axolot-Client-v0.16.0" "$env:RUNNER_TEMP\fable.patch"
+          Invoke-WebRequest "https://raw.githubusercontent.com/DiskiiVn/Craftopia-bot/main/axolot-build/v0.16.0/nova152-base.css" -OutFile "work\Axolot-Client-v0.16.0\src\nova152.css"
+          if (-not (Test-Path "work\Axolot-Client-v0.16.0\src\nova152.css")) { throw "Missing restored CSS" }
           $pkg = Get-Content -Raw "work\Axolot-Client-v0.16.0\package.json" | ConvertFrom-Json
           if ($pkg.version -ne "0.16.0") { throw "Unexpected package version $($pkg.version)" }
           if (-not (Test-Path "work\Axolot-Client-v0.16.0\src\assets\minecraft-cherry-valley.webp")) { throw "Background art missing" }
