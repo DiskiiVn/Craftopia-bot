@@ -1,0 +1,307 @@
+diff --git a/RELEASE-0.16.2.md b/RELEASE-0.16.2.md
+new file mode 100644
+index 0000000..0d9e0dd
+--- /dev/null
++++ b/RELEASE-0.16.2.md
+@@ -0,0 +1,9 @@
++# Axolot Client 0.16.2 – Mods UI Preview
++
++- New Minecraft-themed Mods Workshop based on the approved visual design.
++- Real per-profile installed files, enable/disable, import and remove actions.
++- Discover search integrated with existing Modrinth / CurseForge backend.
++- Compatibility Doctor reports real checks; no invented health status.
++- Native resource/shader pack ZIP import and removal.
++- Actual installed versions displayed from JAR filenames; no misleading fabricated metadata.
++- No auto-update stable changes.
+diff --git a/package.json b/package.json
+index 3a1ebff..6636e82 100755
+--- a/package.json
++++ b/package.json
+@@ -1,7 +1,7 @@
+ {
+   "name": "axolot-client",
+   "private": true,
+-  "version": "0.16.1",
++  "version": "0.16.2",
+   "type": "module",
+   "scripts": {
+     "dev": "vite",
+diff --git a/src-tauri/Cargo.toml b/src-tauri/Cargo.toml
+index aada984..fd5ddf7 100755
+--- a/src-tauri/Cargo.toml
++++ b/src-tauri/Cargo.toml
+@@ -1,6 +1,6 @@
+ [package]
+ name = "axolot-client"
+-version = "0.16.1"
++version = "0.16.2"
+ description = "Axolot Client Minecraft launcher"
+ authors = ["Axolot Client"]
+ edition = "2021"
+diff --git a/src-tauri/tauri.conf.json b/src-tauri/tauri.conf.json
+index 2e63734..12054af 100755
+--- a/src-tauri/tauri.conf.json
++++ b/src-tauri/tauri.conf.json
+@@ -1,7 +1,7 @@
+ {
+   "$schema": "https://schema.tauri.app/config/2",
+   "productName": "Axolot Client",
+-  "version": "0.16.1",
++  "version": "0.16.2",
+   "identifier": "gg.axolot.client",
+   "build": {
+     "beforeDevCommand": "npm run dev",
+@@ -12,7 +12,7 @@
+   "app": {
+     "windows": [
+       {
+-        "title": "Axolot Client — Launcher Preview 0.16.1",
++        "title": "Axolot Client — Launcher Preview 0.16.2",
+         "width": 1420,
+         "height": 850,
+         "minWidth": 980,
+diff --git a/src/main.tsx b/src/main.tsx
+index c1b41fe..d830510 100755
+--- a/src/main.tsx
++++ b/src/main.tsx
+@@ -62,6 +62,7 @@ import './nova151.css';
+ import './nova152.css';
+ import './fable160.css';
+ import './native161.css';
++import './mods162.css';
+ 
+ type Page = 'play' | 'profiles' | 'partners' | 'servers' | 'performance' | 'store' | 'accounts' | 'downloads' | 'settings';
+ type Loader = 'Fabric' | 'Vanilla' | 'Forge' | 'NeoForge';
+@@ -346,6 +347,9 @@ function App() {
+   const [modLibraryTab, setModLibraryTab] = React.useState<ModLibraryTab>('installed');
+   const [localMods, setLocalMods] = React.useState<LocalMod[]>([]);
+   const [modFileSearch, setModFileSearch] = React.useState('');
++  const [mods162Tab, setMods162Tab] = React.useState<'installed' | 'discover' | 'updates' | 'resources' | 'shaders'>('installed');
++  const [mods162Sort, setMods162Sort] = React.useState<'name' | 'size'>('name');
++  const [mods162Filter, setMods162Filter] = React.useState<'all' | 'enabled' | 'disabled'>('all');
+   const [catalogQuery, setCatalogQuery] = React.useState('');
+   const [catalogProjects, setCatalogProjects] = React.useState<ModrinthProject[]>([]);
+   const [catalogLoading, setCatalogLoading] = React.useState(false);
+@@ -1230,9 +1234,9 @@ function App() {
+         enabled: !mod.enabled,
+       });
+       await refreshLocalMods(managedProfile.id);
+-    } catch {
+-      setLocalMods((current) => current.map((item) => item.name === mod.name ? { ...item, enabled: !item.enabled } : item));
+-      setCatalogMessage('Preview mode: toggle changed in UI only.');
++    } catch (error) {
++      setCatalogMessage(`Unable to change ${mod.name}: ${String(error)}`);
++      setStatus(`Mod toggle failed: ${String(error)}`);
+     }
+   };
+ 
+@@ -1241,9 +1245,9 @@ function App() {
+     try {
+       await invoke<string>('remove_mod', { profileId: managedProfile.id, fileName: mod.name });
+       await refreshLocalMods(managedProfile.id);
+-    } catch {
+-      setLocalMods((current) => current.filter((item) => item.name !== mod.name));
+-      setCatalogMessage('Preview mode: mod removed from UI only.');
++    } catch (error) {
++      setCatalogMessage(`Unable to remove ${mod.name}: ${String(error)}`);
++      setStatus(`Mod removal failed: ${String(error)}`);
+     }
+   };
+ 
+@@ -1520,7 +1524,7 @@ function App() {
+       <header className="axo-topbar">
+         <button className="axo-brand" onClick={() => setPage('play')}>
+           <span className="axo-logo"><i /><b>A</b></span>
+-          <span className="axo-brand-copy"><strong>AXOLOT CLIENT</strong><small>JAVA EDITION · 0.16.1</small></span>
++          <span className="axo-brand-copy"><strong>AXOLOT CLIENT</strong><small>JAVA EDITION · 0.16.2</small></span>
+         </button>
+ 
+ 
+@@ -1855,38 +1859,86 @@ function App() {
+         )}
+ 
+         {page === 'partners' && activeProfile && (
+-          <section className="nova-page nova-mods-page">
+-            <div className="nova-page-head">
+-              <div><span className="micro-label">CONTENT LAB</span><h1>Mods, packs & shaders</h1><p>{activeProfile.name} · {activeProfile.versionId} · {activeProfile.loader}</p></div>
+-              <div className="nova-head-actions"><button onClick={() => openModLibrary(activeProfile,'installed')}><Package size={15}/> Installed</button><button className="primary" onClick={() => openModLibrary(activeProfile,'browse-mods')}><Search size={15}/> Discover mods</button></div>
+-            </div>
+-            <div className="nova-stat-row">
+-              <div><Package size={18}/><span><b>{localMods.length}</b><small>Local mods</small></span></div>
+-              <div><CheckCircle2 size={18}/><span><b>{localMods.filter(m=>m.enabled).length}</b><small>Enabled</small></span></div>
+-              <div><ImageIcon size={18}/><span><b>{resourcePacks.length}</b><small>Resource packs</small></span></div>
+-              <div><Sparkles size={18}/><span><b>{shaderPacks.length}</b><small>Shader packs</small></span></div>
+-            </div>
+-            <div className="nova-mod-grid">
+-              <article className="nova-panel nova-installed-panel">
+-                <div className="nova-panel-title"><span><Package size={16}/>Installed mods</span><button onClick={() => openModLibrary(activeProfile,'installed')}>Manage all <ChevronRight size={14}/></button></div>
+-                <div className="nova-dense-list">
+-                  {localMods.slice(0,7).map((mod)=><div key={mod.name}><i className={mod.enabled?'on':''}/><span><b>{mod.name.replace(/\.disabled$/,'')}</b><small>{(mod.size_bytes/1024/1024).toFixed(1)} MB · {mod.enabled?'Enabled':'Disabled'}</small></span></div>)}
+-                  {!localMods.length && <div className="nova-empty"><Package size={24}/><span><b>No local mods yet</b><small>Use Discover to install compatible mods.</small></span></div>}
++          <section className="mc162-mods" aria-label="Axolot Mods and resource packs">
++            <header className="mc162-hero">
++              <div className="mc162-hero-title">
++                <span className="mc162-eyebrow">AXOLOT CONTENT WORKSHOP</span>
++                <h1>Mods, packs <em>&amp; shaders</em></h1>
++                <p>Manage your Minecraft installation without leaving Axolot.</p>
++                <div className="mc162-profile-strip">
++                  <select aria-label="Choose Minecraft profile" value={activeProfile.id} onChange={(e) => {setActiveProfileId(e.target.value); setDoctorResult(null); setCatalogProjects([]);}}>
++                    {profiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
++                  </select>
++                  <span><Gamepad2 size={14}/> {activeProfile.versionId} · {activeProfile.loader}</span>
+                 </div>
+-              </article>
+-              <article className="nova-panel">
+-                <div className="nova-panel-title"><span><ImageIcon size={16}/>Resource packs</span><label className="nova-upload"><Upload size={14}/>Import<input type="file" accept=".zip" onChange={(e)=>{const f=e.target.files?.[0];if(f)void importProfileAsset('resourcepacks',f);e.currentTarget.value='';}}/></label></div>
+-                <div className="nova-pack-list">{resourcePacks.slice(0,5).map(pack=><div key={pack.name}><span><ImageIcon size={15}/><b>{pack.name}</b></span><button onClick={()=>void removeProfileAsset('resourcepacks',pack.name)}><X size={13}/></button></div>)}{!resourcePacks.length&&<p>Drop in texture packs without hunting through AppData.</p>}</div>
+-              </article>
+-              <article className="nova-panel">
+-                <div className="nova-panel-title"><span><Sparkles size={16}/>Shaders</span><label className="nova-upload"><Upload size={14}/>Import<input type="file" accept=".zip,.jar" onChange={(e)=>{const f=e.target.files?.[0];if(f)void importProfileAsset('shaderpacks',f);e.currentTarget.value='';}}/></label></div>
+-                <div className="nova-pack-list">{shaderPacks.slice(0,5).map(pack=><div key={pack.name}><span><Sparkles size={15}/><b>{pack.name}</b></span><button onClick={()=>void removeProfileAsset('shaderpacks',pack.name)}><X size={13}/></button></div>)}{!shaderPacks.length&&<p>Import a shader pack; install Iris from Discover when needed.</p>}</div>
+-              </article>
+-              <article className="nova-panel nova-discover-panel">
+-                <div className="nova-panel-title"><span><Rocket size={16}/>Quick discover</span><button onClick={() => openModLibrary(activeProfile,'browse-mods')}>Browse catalog <ChevronRight size={14}/></button></div>
+-                <div className="nova-discover-list">{fallbackMods.map(project=><button key={project.project_id} onClick={()=>{openModLibrary(activeProfile,'browse-mods');setCatalogQuery(project.title);}}><span><b>{project.title}</b><small>{project.author} · {(project.downloads||0).toLocaleString()} downloads</small></span><Plus size={14}/></button>)}</div>
+-              </article>
++              </div>
++              <div className="mc162-hero-launch">
++                <span><Package size={17}/> <small>INSTALLED MODS</small> <b>{localMods.length}</b></span>
++                <button className="mc162-play" disabled={launching || gameStatus?.state==='running'} onClick={() => void launchProfile(activeProfile)}><Play size={21} fill="currentColor"/> {gameStatus?.state==='running'?'RUNNING':launching?'LAUNCHING…':'PLAY'}</button>
++              </div>
++            </header>
++            <nav className="mc162-tabs" aria-label="Content sections">
++              {([
++                ['installed','Installed',Package],
++                ['discover','Discover',Search],
++                ['updates','Compatibility',ShieldCheck],
++                ['resources','Resource packs',ImageIcon],
++                ['shaders','Shaders',Sparkles],
++              ] as const).map(([id,label,Icon])=><button key={id} className={mods162Tab===id?'active':''} onClick={()=>{
++                setMods162Tab(id);
++                if(id==='discover') void searchCatalog('mod',catalogSource,'');
++                if(id==='updates') void runProfileDoctor();
++                if(id==='resources'||id==='shaders') void refreshAssets();
++              }}><Icon size={17}/>{label}{id==='installed'&&<span className="mc162-tab-count">{localMods.length}</span>}{id==='updates'&&doctorResult?.issues.some(issue=>issue.severity==='error'||issue.severity==='warn')&&<span className="mc162-tab-alert"/>}</button>)}
++              <button className="mc162-refresh" aria-label="Reload installed mods" title="Refresh mods and packs" onClick={()=>{void refreshLocalMods(activeProfile.id);void refreshAssets();}}><RefreshCw size={17}/></button>
++            </nav>
++            <div className="mc162-workbench">
++              <div className="mc162-primary">
++                {mods162Tab==='installed' && <section className="mc162-panel mc162-installed">
++                  <div className="mc162-panel-head">
++                    <div><h2><Package size={20}/> Installed mods <span className="mc162-count">{localMods.length}</span></h2><small>{localMods.filter(m=>m.enabled).length} enabled · {localMods.filter(m=>!m.enabled).length} disabled</small></div>
++                    <div className="mc162-head-actions"><button onClick={()=>openProfileFolder(activeProfile)}><FolderOpen size={15}/> Open folder</button><button onClick={()=>{setMods162Tab('updates');void runProfileDoctor();}}><ShieldCheck size={15}/> Check</button><label className="mc162-accent-file"><Plus size={16}/> Add JAR<input type="file" accept=".jar,application/java-archive" onChange={(e)=>{const f=e.target.files?.[0];if(f)void importLocalMod(f);e.currentTarget.value='';}}/></label></div>
++                  </div>
++                  <div className="mc162-searchbar"><label><Search size={17}/><input aria-label="Search installed mod files" value={modFileSearch} onChange={e=>setModFileSearch(e.target.value)} placeholder="Search installed mods..."/></label><select aria-label="Filter mods" value={mods162Filter} onChange={e=>setMods162Filter(e.target.value as typeof mods162Filter)}><option value="all">All mods</option><option value="enabled">Enabled</option><option value="disabled">Disabled</option></select><select aria-label="Sort mods" value={mods162Sort} onChange={e=>setMods162Sort(e.target.value as typeof mods162Sort)}><option value="name">Name (A → Z)</option><option value="size">File size</option></select></div>
++                  <div className="mc162-mod-list" role="list">
++                    {localMods.filter(m=>m.name.toLowerCase().includes(modFileSearch.trim().toLowerCase())&&(mods162Filter==='all'||(mods162Filter==='enabled'?m.enabled:!m.enabled))).sort((a,b)=>mods162Sort==='name'?a.name.localeCompare(b.name):b.size_bytes-a.size_bytes).map((mod,i)=>{
++                      const modName=mod.name.replace(/\.jar(\.disabled)?$/i,'').replace(/\.disabled$/i,'');
++                      return <div className="mc162-mod" role="listitem" key={mod.name}>
++                        <span className={`mc162-mod-glyph glyph-${i%5}`}><Package size={20}/></span>
++                        <span className="mc162-mod-info"><b title={modName}>{modName}</b><small title={mod.name}>{mod.name}</small></span>
++                        <span className="mc162-mod-size">{(mod.size_bytes/1048576).toFixed(1)} MB</span>
++                        <button className={`mc162-switch ${mod.enabled?'on':''}`} title={mod.enabled?'Disable mod':'Enable mod'} role="switch" aria-label={`Toggle ${modName}`} aria-checked={mod.enabled} onClick={()=>void toggleLocalMod(mod)}><span/></button>
++                        <button className="mc162-iconbtn" aria-label={`Remove ${modName}`} title="Remove mod" onClick={()=>{if(window.confirm(`Remove ${mod.name} from this profile?`)) void deleteLocalMod(mod);}}><Trash2 size={16}/></button>
++                      </div>;
++                    })}
++                    {(!localMods.length||!localMods.some(m=>m.name.toLowerCase().includes(modFileSearch.trim().toLowerCase())&&(mods162Filter==='all'||(mods162Filter==='enabled'?m.enabled:!m.enabled))))&&<div className="mc162-empty"><Package size={30}/><b>{localMods.length?'No matching mods':'No mods in this installation'}</b><p>Import a .jar file or browse compatible mods.</p><button onClick={()=>{setMods162Tab('discover');void searchCatalog('mod',catalogSource,'');}}>Find mods <ChevronRight size={15}/></button></div>}
++                  </div>
++                  <div className="mc162-panel-foot"><span><CheckCircle2 size={15}/> Showing actual files from this profile</span><button onClick={()=>void refreshLocalMods(activeProfile.id)}>Refresh list <RefreshCw size={14}/></button></div>
++                </section>}
++                {mods162Tab==='discover' && <section className="mc162-panel mc162-catalog">
++                  <div className="mc162-panel-head"><div><h2><Search size={20}/> Discover compatible mods</h2><small>Only real results for {activeProfile.versionId} · {activeProfile.loader}</small></div><div className="mc162-source"><button className={catalogSource==='modrinth'?'active':''} onClick={()=>{setCatalogSource('modrinth');void searchCatalog('mod','modrinth',catalogQuery);}}>Modrinth</button><button className={catalogSource==='curseforge'?'active':''} onClick={()=>{setCatalogSource('curseforge');void searchCatalog('mod','curseforge',catalogQuery);}}>CurseForge</button></div></div>
++                  <form className="mc162-searchbar" onSubmit={e=>{e.preventDefault();void searchCatalog('mod',catalogSource,catalogQuery);}}><label><Search size={17}/><input aria-label="Search catalog" value={catalogQuery} onChange={e=>setCatalogQuery(e.target.value)} placeholder="Search Modrinth / CurseForge..."/></label><button type="submit">Search</button></form>
++                  <div className="mc162-catalog-results"><p className="mc162-catalog-status">{catalogLoading?'Loading compatible mods…':catalogMessage}</p>{catalogProjects.map(project=><div key={`${project.source}-${project.project_id}`} className="mc162-catalog-row"><span className="mc162-mod-glyph"><Package size={20}/></span><span><b>{project.title}</b><small>{project.description}</small></span><button disabled={catalogLoading} onClick={()=>void installCatalogProject(project)}><Download size={15}/> Install</button></div>)}{!catalogProjects.length&&!catalogLoading&&<div className="mc162-empty"><Search size={29}/><b>No results to show</b><p>Try a different query or switch catalog source.</p></div>}</div>
++                </section>}
++                {mods162Tab==='updates' && <section className="mc162-panel mc162-doctor">
++                  <div className="mc162-panel-head"><div><h2><ShieldCheck size={20}/> Mod Compatibility Doctor</h2><small>Checks the real profile; no estimated or invented status</small></div><button onClick={()=>void runProfileDoctor()} disabled={doctorBusy}><RefreshCw size={15}/> {doctorBusy?'Checking…':'Run check'}</button></div>
++                  <div className="mc162-health-score"><ShieldCheck size={28}/><div><b>{doctorBusy?'Checking…':doctorResult?`${doctorResult.score}/100`:'Not checked'}</b><small>{doctorResult?.summary||'Run Doctor to scan this installation.'}</small></div></div>
++                  <div className="mc162-doctor-items">{doctorResult?.issues.map((issue,i)=><div key={`${issue.id}-${i}`}><span className={issue.severity==='error'?'error':issue.severity==='warn'?'warn':'ok'}>{issue.severity==='error'||issue.severity==='warn'?<AlertTriangle size={18}/>:<CheckCircle2 size={18}/>}</span><span><b>{issue.title}</b><small>{issue.detail}</small></span>{issue.fixable&&<span className="mc162-fixable">Repairable</span>}</div>)}{!doctorResult&&!doctorBusy&&<div className="mc162-empty">Your compatibility report will appear here.</div>}</div>
++                  <div className="mc162-panel-foot"><span>Save a profile snapshot before modifying installed mods.</span><button disabled={doctorBusy||snapshotBusy} onClick={()=>void createSnapshot()}><Save size={15}/> Backup</button><button disabled={doctorBusy||!doctorResult||!doctorResult.issues.some(issue=>issue.fixable)} onClick={()=>void repairActiveProfile()}><Wrench size={15}/> Repair</button></div>
++                </section>}
++                {(mods162Tab==='resources'||mods162Tab==='shaders') && <section className="mc162-panel mc162-assets">
++                  <div className="mc162-panel-head"><div><h2>{mods162Tab==='resources'?<ImageIcon size={20}/>:<Sparkles size={20}/>} {mods162Tab==='resources'?'Resource packs':'Shader packs'}</h2><small>Files saved to {activeProfile.name}</small></div><label className="mc162-accent-file"><Upload size={16}/> Import {mods162Tab==='resources'?'pack':'shader'}<input type="file" accept=".zip" onChange={(e)=>{const f=e.target.files?.[0];if(f)void importProfileAsset(mods162Tab==='resources'?'resourcepacks':'shaderpacks',f);e.currentTarget.value='';}}/></label></div>
++                  <div className="mc162-assets-list">{(mods162Tab==='resources'?resourcePacks:shaderPacks).map(item=><div key={item.name}><span className="mc162-mod-glyph">{mods162Tab==='resources'?<ImageIcon size={21}/>:<Sparkles size={21}/>}</span><span><b>{item.name}</b><small>{(item.size_bytes/1048576).toFixed(1)} MB</small></span><button onClick={()=>void removeProfileAsset(mods162Tab==='resources'?'resourcepacks':'shaderpacks',item.name)} title="Remove file"><Trash2 size={16}/></button></div>)}{!(mods162Tab==='resources'?resourcePacks:shaderPacks).length&&<div className="mc162-empty"><ImageIcon size={32}/><b>No packs installed</b><p>Import a compatible ZIP pack from your computer.</p></div>}</div>
++                </section>}
++              </div>
++              <aside className="mc162-aside">
++                <section className="mc162-side-panel mc162-side-assets"><header><h3><ImageIcon size={18}/> Resource packs <small>{resourcePacks.length}</small></h3><button onClick={()=>setMods162Tab('resources')}>Manage <ChevronRight size={15}/></button></header>{resourcePacks.length?<div className="mc162-side-assets-list">{resourcePacks.slice(0,2).map(item=><div key={item.name}><ImageIcon size={16}/><span title={item.name}>{item.name}</span></div>)}</div>:<label className="mc162-dropzone"><ImageIcon size={25}/><span>No resource packs</span><small>Import a ZIP file</small><input type="file" accept=".zip" onChange={e=>{const f=e.target.files?.[0];if(f)void importProfileAsset('resourcepacks',f);e.currentTarget.value='';}}/></label>}</section>
++                <section className="mc162-side-panel mc162-side-assets"><header><h3><Sparkles size={18}/> Shaders <small>{shaderPacks.length}</small></h3><button onClick={()=>setMods162Tab('shaders')}>Manage <ChevronRight size={15}/></button></header>{shaderPacks.length?<div className="mc162-side-assets-list">{shaderPacks.slice(0,2).map(item=><div key={item.name}><Sparkles size={16}/><span title={item.name}>{item.name}</span></div>)}</div>:<label className="mc162-dropzone"><Sparkles size={25}/><span>No shader packs</span><small>Import a ZIP file</small><input type="file" accept=".zip" onChange={e=>{const f=e.target.files?.[0];if(f)void importProfileAsset('shaderpacks',f);e.currentTarget.value='';}}/></label>}</section>
++                <section className="mc162-side-panel mc162-side-health"><header><h3><ShieldCheck size={18}/> Mod health</h3><button onClick={()=>{setMods162Tab('updates');void runProfileDoctor();}}>{doctorResult?'View report':'Scan'} <ChevronRight size={15}/></button></header><div className="mc162-health-summary"><span className={doctorResult?'done':'unknown'}>{doctorResult?<CheckCircle2 size={17}/>:<AlertTriangle size={17}/>}</span><span><b>{doctorResult?`${doctorResult.score}/100`:'Not scanned yet'}</b><small>{doctorResult?doctorResult.summary:'Run Doctor to check this installation.'}</small></span></div><button className="mc162-outline" disabled={doctorBusy} onClick={()=>{setMods162Tab('updates');void runProfileDoctor();}}><ShieldCheck size={15}/> {doctorBusy?'Scanning…':'Check compatibility'}</button></section>
++                <section className="mc162-side-panel mc162-recommend"><header><h3><Star size={18}/> Recommended</h3><button onClick={()=>{setMods162Tab('discover');void searchCatalog('mod',catalogSource,'');}}>Explore <ChevronRight size={15}/></button></header><div>{fallbackMods.slice(0,3).map(project=><button key={project.project_id} onClick={()=>{setMods162Tab('discover');setCatalogQuery(project.title);void searchCatalog('mod',catalogSource,project.title);}}><span className="mc162-mod-glyph"><Package size={17}/></span><span><b>{project.title}</b><small>Search compatible version</small></span><Plus size={17}/></button>)}</div></section>
++              </aside>
+             </div>
++            <div className="mc162-status-line" title={catalogMessage}>{status}</div>
+           </section>
+         )}
+ 
+diff --git a/src/mods162.css b/src/mods162.css
+new file mode 100644
+index 0000000..a7eac22
+--- /dev/null
++++ b/src/mods162.css
+@@ -0,0 +1,65 @@
++/* Axolot 0.16.2 – native Mods Workshop. Scoped to the actual Tauri launcher. */
++.native161-app .axo-workspace>section.mc162-mods{
++  display:grid!important;grid-template-rows:155px 49px minmax(0,1fr) 27px!important;gap:0!important;
++  width:100%!important;height:100%!important;min-height:0!important;min-width:0!important;
++  padding:0!important;margin:0!important;overflow:hidden!important;border:0!important;border-radius:0!important;
++  background:#071626!important;color:#eaf3ff!important;font-family:Inter,"Segoe UI",system-ui,sans-serif!important
++}
++.mc162-mods *{box-sizing:border-box}.mc162-mods button,.mc162-mods select,.mc162-mods input{font-family:inherit}
++.mc162-mods button,.mc162-mods label.mc162-accent-file,.mc162-mods label.mc162-dropzone{cursor:pointer}
++.mc162-mods button:disabled{cursor:default;opacity:.48}
++.mc162-hero{min-height:0;display:flex;align-items:center;justify-content:space-between;gap:16px;position:relative;padding:18px clamp(20px,2.3vw,36px);
++  background:linear-gradient(90deg,rgba(3,12,27,.95) 0%,rgba(3,14,29,.74) 40%,rgba(4,13,28,.26) 75%),url('./assets/minecraft-cherry-valley.webp') center 54%/cover no-repeat;
++  border-bottom:1px solid #315a7a;overflow:hidden}
++.mc162-hero:after{position:absolute;content:"";inset:auto 0 0;height:50%;background:linear-gradient(0deg,rgba(5,16,34,.58),transparent);pointer-events:none}
++.mc162-hero-title,.mc162-hero-launch{position:relative;z-index:1}.mc162-eyebrow{font-size:10px;font-weight:900;letter-spacing:.14em;color:#64f1e5}
++.mc162-hero-title h1{margin:7px 0 3px;font-size:clamp(23px,2.65vw,38px);line-height:1.1;letter-spacing:-.035em;font-weight:850;text-shadow:0 3px 12px rgba(0,0,0,.38)}
++.mc162-hero-title h1 em{font-style:normal;background:linear-gradient(90deg,#4bdff8,#ce74ff);-webkit-background-clip:text;background-clip:text;color:transparent}
++.mc162-hero-title p{margin:5px 0 11px;font-size:12px;color:#cad7e8}.mc162-profile-strip{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
++.mc162-profile-strip select,.mc162-profile-strip span{border:1px solid rgba(145,207,239,.3);border-radius:5px;min-height:29px;padding:4px 10px;background:rgba(7,22,43,.83);color:#e8f6ff;font-size:11px;font-weight:700}
++.mc162-profile-strip select{min-width:160px;max-width:255px;cursor:pointer}.mc162-profile-strip span{display:inline-flex;align-items:center;gap:7px}
++.mc162-hero-launch{display:flex;align-items:center;gap:16px;background:rgba(6,18,39,.91);border:1px solid #3c6795;border-radius:9px;padding:12px 15px;box-shadow:0 8px 30px #0009}
++.mc162-hero-launch>span{display:grid;grid-template-columns:20px auto;column-gap:8px;align-items:center;min-width:102px}.mc162-hero-launch>span svg{grid-row:span 2;color:#74d1ee}.mc162-hero-launch>span small{font-size:8px;white-space:nowrap;letter-spacing:.07em;color:#a9bbd0;font-weight:750}.mc162-hero-launch>span b{font-size:25px;line-height:1.15;font-weight:850}
++.mc162-hero-launch .mc162-play{height:51px;min-width:139px;border:1px solid #7da7ff;border-bottom:3px solid #333a9e;border-radius:6px;display:flex;align-items:center;justify-content:center;gap:10px;font-size:15px;font-weight:900;letter-spacing:.07em;color:#fff;background:linear-gradient(100deg,#2689fc,#913af4);box-shadow:0 6px 23px #584ae759}
++.mc162-tabs{display:flex;align-items:stretch;padding:0 14px;gap:2px;min-width:0;min-height:0;background:rgba(5,19,40,.97);border-bottom:1px solid #2d5279;overflow-x:auto;scrollbar-width:none}
++.mc162-tabs button{display:flex;align-items:center;gap:9px;flex-shrink:0;padding:0 20px;border:0;border-bottom:3px solid transparent;color:#b8c9df;background:transparent;font-size:12px;font-weight:750;white-space:nowrap}
++.mc162-tabs button.active{border-bottom-color:#52e6fa;background:linear-gradient(180deg,#1a2e62,#201f74);color:white}.mc162-tabs button:hover:not(.active){background:#172f51;color:white}
++.mc162-tabs .mc162-refresh{margin-left:auto;padding:0 12px}.mc162-tab-count{background:#273d5e;border-radius:10px;padding:2px 7px;font-size:10px}.mc162-tab-alert{background:#f4ab51;width:7px;height:7px;border-radius:50%}
++.mc162-workbench{display:grid;grid-template-columns:minmax(0,1.8fr) minmax(290px,.93fr);gap:12px;min-height:0;min-width:0;padding:12px 14px 8px;overflow:hidden;background:linear-gradient(rgba(5,13,29,.79),rgba(4,13,28,.91)),url('./assets/minecraft-cherry-valley.webp') center 75%/cover no-repeat}
++.mc162-primary,.mc162-aside{min-height:0;min-width:0}.mc162-aside{display:grid;grid-template-rows:minmax(108px,auto) minmax(108px,auto) minmax(128px,auto) minmax(140px,1fr);gap:10px;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#3d7795 transparent}
++.mc162-panel,.mc162-side-panel{background:linear-gradient(148deg,rgba(9,31,60,.97),rgba(6,21,42,.97));border:1px solid #245b83;border-radius:8px;box-shadow:0 7px 20px #0004;min-height:0;min-width:0;overflow:hidden}
++.mc162-primary>.mc162-panel{display:flex;flex-direction:column;height:100%;border-left:2px solid #27c8ef}
++.mc162-panel-head{min-height:74px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:11px 16px;border-bottom:1px solid rgba(112,184,240,.14)}
++.mc162-panel-head h2{display:flex;align-items:center;gap:9px;font-size:16px;line-height:1.1;margin:0 0 6px;font-weight:850}.mc162-panel-head h2 svg{color:#a7d8ff}.mc162-panel-head small{display:block;color:#96abc4;font-size:11px}
++.mc162-panel-head .mc162-count{font-size:10px;padding:4px 8px;border-radius:10px;background:#233959;color:#d8e7fb}
++.mc162-head-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.mc162-panel button,.mc162-accent-file{border:1px solid #365777;border-radius:5px;background:#142742;color:#daeaff;padding:0 11px;min-height:33px;display:inline-flex;align-items:center;justify-content:center;gap:7px;font-size:11px;font-weight:700;white-space:nowrap}
++.mc162-panel button:hover,.mc162-side-panel button:hover{filter:brightness(1.18)}.mc162-panel .mc162-accent-file{background:linear-gradient(110deg,#286bb1,#6348dc);border-color:#6474d3;color:white}.mc162-accent-file input,.mc162-dropzone input{display:none}
++.mc162-searchbar{display:flex;align-items:center;gap:8px;min-height:55px;padding:9px 14px;background:#071c35;border-bottom:1px solid #294c70}
++.mc162-searchbar label{display:flex;align-items:center;gap:7px;height:35px;border:1px solid #365e7f;border-radius:5px;background:#08162b;padding:0 10px;min-width:0;flex:1;color:#86bbdc}
++.mc162-searchbar input{flex:1;min-width:0;border:0;outline:0;color:#e9f5ff;font-size:12px;background:transparent}
++.mc162-searchbar select{height:35px;max-width:142px;min-width:112px;border:1px solid #365e7f;border-radius:5px;padding:0 8px;background:#0a1c33;color:#e2eeff;font-size:11px;cursor:pointer}
++.mc162-mod-list,.mc162-assets-list,.mc162-catalog-results,.mc162-doctor-items{min-height:0;flex:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:#3c87ac transparent}
++.mc162-mod{display:grid;grid-template-columns:42px minmax(0,1fr) 76px 46px 35px;align-items:center;gap:9px;min-height:54px;padding:6px 13px;background:#091b34;border-bottom:1px solid rgba(126,191,235,.14)}
++.mc162-mod:nth-child(even){background:#0c2040}.mc162-mod:hover{background:#123058}
++.mc162-mod-glyph{display:grid;place-items:center;width:39px;height:39px;flex:0 0 39px;background:linear-gradient(140deg,#275e94,#173c67);border:1px solid #386b95;border-radius:7px;color:#c7f4ff}
++.mc162-mod-glyph.glyph-1{background:linear-gradient(145deg,#3f658d,#6546ac)}.mc162-mod-glyph.glyph-2{background:linear-gradient(145deg,#146a6d,#235c87)}.mc162-mod-glyph.glyph-3{background:linear-gradient(145deg,#48648b,#234370)}.mc162-mod-glyph.glyph-4{background:linear-gradient(145deg,#5e4789,#233e70)}
++.mc162-mod-info{display:flex;flex-direction:column;gap:4px;min-width:0}.mc162-mod-info b{font-size:12px;color:#f0f8ff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}.mc162-mod-info small{font-size:10px;color:#829ebd;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mc162-mod-size{font-size:10px;font-weight:700;color:#9dbbd1;text-align:right}
++.mc162-mod button.mc162-switch{min-height:23px;padding:2px;display:flex;align-items:center;justify-content:flex-start;border-radius:15px;width:42px;height:24px;background:#34485e;border:1px solid #5d6c81}.mc162-mod button.mc162-switch.on{justify-content:flex-end;background:#267be1;border-color:#73b8ff}.mc162-switch span{width:18px;height:18px;border-radius:50%;background:white;box-shadow:0 1px 4px #0005}
++.mc162-mod button.mc162-iconbtn{min-height:30px;width:33px;padding:0;background:transparent;border-color:transparent;color:#afc2d8}.mc162-mod button.mc162-iconbtn:hover{color:#ff8a9d}
++.mc162-panel-foot{display:flex;align-items:center;gap:10px;min-height:42px;padding:7px 14px;background:#091a32;border-top:1px solid #294968;justify-content:space-between;font-size:10px;color:#9dc5d2}.mc162-panel-foot>span{display:flex;align-items:center;gap:6px;min-width:0}.mc162-panel-foot button{min-height:27px}
++.mc162-side-panel{padding:0;display:flex;flex-direction:column}.mc162-side-panel header{display:flex;align-items:center;justify-content:space-between;gap:5px;padding:8px 12px;min-height:40px;border-bottom:1px solid #24466a}.mc162-side-panel header h3{margin:0;display:flex;align-items:center;gap:7px;font-size:12px;white-space:nowrap}.mc162-side-panel h3 svg{color:#b5d9ff}.mc162-side-panel header small{border:1px solid #30587b;background:#152b4b;padding:2px 6px;border-radius:8px;color:#c8ddff;font-size:10px}.mc162-side-panel header button{background:transparent;border:0;display:flex;align-items:center;gap:4px;color:#c5d6ea;font-size:10px;padding:6px;white-space:nowrap}
++.mc162-dropzone{margin:8px 11px;flex:1;border:1px dashed #37628e;border-radius:6px;background:#0a2040;min-height:62px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:#b6cdea}.mc162-dropzone svg{color:#8ccefa}.mc162-dropzone span{font-size:11px;font-weight:800}.mc162-dropzone small{font-size:9px;color:#83a1c1}
++.mc162-side-assets-list{padding:7px 10px;display:flex;flex-direction:column;gap:4px}.mc162-side-assets-list>div{display:flex;align-items:center;gap:9px;min-width:0;font-size:10px;padding:4px;color:#bbd8f0}.mc162-side-assets-list span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
++.mc162-health-summary{display:flex;gap:8px;align-items:center;padding:9px 12px}.mc162-health-summary>span:last-child{display:flex;flex-direction:column;gap:3px;min-width:0}.mc162-health-summary b{font-size:12px}.mc162-health-summary small{font-size:10px;color:#8da9c4;line-height:1.3}.mc162-health-summary .done{color:#4ed5a4}.mc162-health-summary .unknown{color:#edb566}
++.mc162-side-health .mc162-outline{display:flex;align-items:center;justify-content:center;gap:7px;margin:0 11px 9px;border:1px solid #3b7097;border-radius:5px;background:#142c50;padding:6px 8px;font-size:10px;font-weight:800;color:#cce8fb}
++.mc162-recommend>div{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;padding:8px}.mc162-recommend>div button{display:flex;align-items:center;flex-direction:column;gap:5px;border:1px solid #27476e;border-radius:5px;background:#132747;color:#e6f4ff;padding:8px 4px;min-width:0}.mc162-recommend>div button .mc162-mod-glyph{height:27px;width:27px;flex-basis:27px}.mc162-recommend>div button span:nth-child(2){display:flex;flex-direction:column;min-width:0;align-items:center}.mc162-recommend>div b{font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}.mc162-recommend>div small{font-size:8px;color:#8fabc7;white-space:nowrap}.mc162-recommend>div button>svg:last-child{color:#86d5fd}
++.mc162-empty{display:flex;min-height:130px;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;color:#88abc9;font-size:11px;padding:14px}.mc162-empty b{font-size:13px;color:#daedff}.mc162-empty p{font-size:11px;margin:0}.mc162-empty button{background:#1c416e}
++.mc162-source{display:flex;gap:3px}.mc162-source button{border-radius:3px;background:#142a4c}.mc162-source button.active{background:#305ba5;border-color:#629fe0}.mc162-catalog-status{padding:8px 12px;color:#8eacc7;margin:0;font-size:11px}.mc162-catalog-row{display:flex;align-items:center;gap:9px;border-bottom:1px solid #26476a;padding:10px 13px}.mc162-catalog-row>span:nth-child(2){display:flex;min-width:0;flex:1;flex-direction:column;gap:5px}.mc162-catalog-row b{font-size:12px}.mc162-catalog-row small{font-size:10px;color:#92acc8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mc162-catalog-row button{background:linear-gradient(100deg,#235e94,#503caf)}
++.mc162-health-score{min-height:76px;background:#0e2849;display:flex;align-items:center;gap:13px;padding:14px 20px;color:#7ee1bc}.mc162-health-score>div{display:flex;flex-direction:column;gap:4px}.mc162-health-score b{font-size:19px;color:#e4f6ff}.mc162-health-score small{font-size:11px;color:#a5c1d4}
++.mc162-doctor-items>div:not(.mc162-empty){display:flex;align-items:center;gap:13px;padding:13px 18px;border-bottom:1px solid #274263}.mc162-doctor-items>div>span:nth-child(2){display:flex;flex-direction:column;gap:4px;flex:1}.mc162-doctor-items b{font-size:12px}.mc162-doctor-items small{font-size:11px;color:#91abc9}.mc162-doctor-items .error{color:#fc8d8b}.mc162-doctor-items .warn{color:#eec06f}.mc162-doctor-items .ok{color:#66ddae}.mc162-fixable{font-size:10px;color:#91dbba}
++.mc162-assets-list>div{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #294768}.mc162-assets-list>div>span:nth-child(2){flex:1;display:flex;flex-direction:column;gap:5px;min-width:0}.mc162-assets-list b{font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mc162-assets-list small{color:#8dabcb;font-size:10px}
++.mc162-status-line{font-size:10px;padding:7px 14px;color:#85acc9;border-top:1px solid #294663;background:#06172b;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
++@media(max-width:1280px){.mc162-hero{padding:13px 18px}.mc162-hero-title h1{font-size:29px}.mc162-workbench{grid-template-columns:minmax(0,1.75fr) minmax(260px,.9fr)}.mc162-tabs button{padding:0 12px}.mc162-panel-head{min-height:67px}.mc162-head-actions{gap:4px}.mc162-head-actions button,.mc162-head-actions label{padding:0 7px}.mc162-mod{grid-template-columns:37px minmax(0,1fr) 56px 42px 31px;padding:6px 9px;gap:6px}.mc162-mod-glyph{width:34px;height:34px;flex-basis:34px}.mc162-hero-launch{padding:9px}.mc162-recommend>div{grid-template-columns:repeat(3,minmax(0,1fr))}.mc162-recommend>div small{display:none}}
++@media(max-width:990px){.mc162-workbench{grid-template-columns:minmax(0,1fr)}.mc162-aside{display:none}.mc162-hero-launch>span{display:none}.mc162-hero-launch .mc162-play{min-width:105px}.mc162-tabs button{font-size:11px;padding:0 10px}.mc162-tabs button svg{width:15px}}
++@media(max-height:780px){.native161-app .axo-workspace>section.mc162-mods{grid-template-rows:111px 42px minmax(0,1fr) 23px!important}.mc162-hero-title h1{font-size:25px}.mc162-hero-title p{display:none}.mc162-profile-strip{margin-top:8px}.mc162-hero-launch .mc162-play{height:40px}.mc162-hero-launch>span b{font-size:20px}.mc162-tabs button{font-size:11px}.mc162-workbench{padding:8px 11px 5px;gap:8px}.mc162-aside{grid-template-rows:98px 98px 120px minmax(100px,1fr);gap:7px}.mc162-panel-head{min-height:57px;padding:7px 10px}.mc162-searchbar{min-height:45px;padding:6px 10px}.mc162-mod{min-height:45px}.mc162-mod-glyph{width:30px;height:30px;flex-basis:30px}.mc162-panel-foot{min-height:33px}.mc162-recommend>div button{padding:4px}}
++@media(prefers-reduced-motion:reduce){.mc162-mods *{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
